@@ -595,6 +595,10 @@ RENDER: dict[str, Callable[[Event], list[str]]] = {
     "react": lambda e: [_render_react(e)],
     "sold": lambda e: [f"<|sold|> {e['name']} ${e['price']}"],
     "imagine": lambda e: [f"<|imagine|> {e['name']} | things: {', '.join(e['things'])} | says: {e['says']}"],
+    # the seller's decision on a buyer's final offer (owner 2026-10-13); a counter carries the buyer's reply
+    "decide": lambda e: [f"<|decide|> {e['name']} ${e['offer']} | {e['action']}"
+                         + (f" ${e['price']}" if e.get("price") else "") + f" | says: {e['says']}"]
+                        + ([f"<|reply|> {e['name']} | {e['reply'][0]} | says: {e['reply'][1]}"] if e.get("reply") else []),
 }
 
 
