@@ -105,12 +105,156 @@ def seed_sale(rng: random.Random) -> Sale:
     return {"cat": cat, "buyers": buyers, "seller_style": rng.choice(STYLES), "typical_price": 75}
 
 
+# Sales written to the "more human seller" standard (owner, 2026-10-13, NEXT_SESSION_PROMPT §4): the buyer GPT misread
+# a player's "heart attack", "20 years old" and "pure breed but no paper", facts no sheet had. These seeds get two of
+# the facts below on top of seed_sale's, drawn so they never contradict the rest of the sheet.
+HUMAN_SELLER_SEEDS = range(2650, 2700)
+PEDIGREE = ("a Ragdoll", "a Maine Coon", "a Siamese", "a British Shorthair", "a Persian", "a Bengal", "a Sphynx",
+            "a Scottish Fold")
+WHITE_POSSIBLE = ("a Maine Coon", "a British Shorthair", "a Persian", "a Scottish Fold")
+CLEAN_BILL = ("microchipped and healthy", "bloodwork last month was normal")      # a sickness would contradict these
+EXTRA_FACTS = {   # name: (weight, the fact as the seller is told it, or one per draw)
+    "very old": (3, None),
+    "heart": (3, ("has a heart murmur the vet keeps an eye on",
+                  "has hypertrophic cardiomyopathy (HCM), on heart pills every day",
+                  "had one heart episode last year, the vet says stable now")),
+    "no papers": (3, None),
+    "diabetes": (1, ("diabetic, needs an insulin shot every day",)),
+    "thyroid": (1, ("has an overactive thyroid, on pills every day",)),
+    "one eye": (0.6, ("blind in the left eye", "blind in the right eye")),
+    "three legs": (0.6, ("has three legs, a back leg was amputated", "has three legs, a front leg was amputated")),
+    "deaf": (1, ("all white and born deaf",)),
+    "teeth": (1, ("had four teeth pulled last year", "had three teeth pulled last year")),
+}
+
+
+# Facts that say a vet saw the cat lately (last year, or ongoing pills, shots or check-ups). They contradict "no vet
+# visit in two years" (found 2026-10-14 on seed 2686: "no vet visit in two years" and "had one heart episode last year,
+# the vet says stable now"). Only seeds from VET_RULE_FROM on get this rule, so every sheet written before keeps its
+# facts. Seed 2654 had the clash in its written sale and is rewritten with the rule (owner, 2026-10-14); the written
+# 2664 and 2679 keep their sheets (their sellers never said both things).
+NO_VET = "vaccinated but no vet visit in two years"
+# Found 2026-10-26 on seed 2718: a one year old cat "with no vet visit in two years". From YOUNG_NO_VET_FROM on such a
+# cat is three years old instead (the same asking price step); of the earlier seeds only YOUNG_NO_VET_ALSO change.
+YOUNG_NO_VET_FROM = 2700
+YOUNG_NO_VET_ALSO = (2098, 2328, 2347, 2526, 2532, 2643)   # written before the rule; fixed with their lines (owner, 2026-10-26)
+VET_LATELY = ("heart", "diabetes", "thyroid", "teeth")
+VET_RULE_FROM = 2686
+VET_RULE_ALSO = (2654,)
+
+
+def _extra_fits(name: str, c: dict[str, Any], vet_rule: bool = False) -> bool:
+    """Whether an extra fact agrees with the rest of the cat's sheet."""
+    if vet_rule and c["health"] == NO_VET and name in VET_LATELY:
+        return False
+    sick = c["health"] not in CLEAN_BILL
+    return {"very old": c["months"] >= 12,       # an adult's health line fits an old cat too
+            "heart": c["months"] >= 12 and sick,
+            "no papers": c["breed"] in PEDIGREE,
+            "diabetes": c["months"] >= 84 and sick,
+            "thyroid": c["months"] > 120 and sick and "thyroid" not in c["health"],
+            "one eye": True, "three legs": True,
+            "deaf": c["breed"] in WHITE_POSSIBLE,
+            "teeth": c["months"] >= 84}[name]
+
+
+def sale_for_seed(seed: int) -> Sale:
+    """seed_sale(seed), with two extra facts (cat["extra"]) on the human-seller seeds (a very old cat's age is 16 to
+    22 years) and one or two LIFE_FACTS on the LIFE_SEEDS. Every tool that writes or checks a sale on a seed uses
+    this, so the sheet and the stored sale agree."""
+    s = seed_sale(random.Random(seed))
+    if (seed >= YOUNG_NO_VET_FROM or seed in YOUNG_NO_VET_ALSO) and s["cat"]["health"] == NO_VET and s["cat"]["months"] < 24:
+        s["cat"]["months"] = 36                 # "no vet visit in two years" cannot fit a cat under two
+        s["cat"]["age"] = _age(36)
+    if seed in LIFE_SEEDS and seed not in HUMAN_SELLER_SEEDS:
+        add_life_facts(seed, s["cat"])
+    if seed not in HUMAN_SELLER_SEEDS:
+        return s
+    rng, c = random.Random(seed * 1009 + 7), s["cat"]
+    for _ in range(2):          # "very old" first changes the age, so the second draw sees the new one
+        names = [n for n in EXTRA_FACTS
+                 if _extra_fits(n, c, seed >= VET_RULE_FROM or seed in VET_RULE_ALSO) and n not in c.get("extra_kinds", [])]
+        name = rng.choices(names, weights=[EXTRA_FACTS[n][0] for n in names])[0]
+        if name == "very old":
+            c["months"] = 12 * rng.randint(16, 22)
+            c["age"] = _age(c["months"])
+            fact = f"{c['age']} old"
+        elif name == "no papers":
+            fact = f"a purebred {c['breed'][2:] if c['breed'].startswith('a ') else c['breed']}, but never had papers"
+        else:
+            fact = rng.choice(EXTRA_FACTS[name][1])
+        c.setdefault("extra_kinds", []).append(name)
+        c.setdefault("extra", []).append(fact)
+    if seed in LIFE_SEEDS:
+        add_life_facts(seed, c)
+    return s
+
+
+# Facts a real adopter asks about that no sheet had (owner, 2026-10-14, from a shelter's list of questions to ask:
+# how the cat came to be rehomed, being picked up, food, fleas and mites, microchip; litter and coat from PetFinder below). Only seeds not yet written get
+# them, so every stored sale keeps its sheet; one or two per cat, drawn so they never contradict the rest of it.
+LIFE_SEEDS = (*range(2593, 2650), *range(2670, 2800))     # 2700-2799 added 2026-10-26, before any was written
+LIFE_FACTS = {   # kind: facts for a kitten (under a year), facts for an older cat
+    "origin": (("found as a stray kitten", "came from a neighbour's unplanned litter"),
+               ("the previous owner moved abroad and could not take the cat", "rehomed because a family member became "
+                "allergic", "the previous owner went into a care home", "found as a stray and never claimed")),
+    "handling": (("loves being picked up and carried", "hates being picked up but sits close by",
+                  "lets you hold them for a minute, then wriggles off"),) * 2,
+    "food": (("eats one brand of dry food and nothing else", "eats wet food twice a day, any brand",
+              "a fussy eater, only eats chicken wet food"),) * 2,
+    "pests": (("treated for fleas and ear mites last month", "on a monthly flea treatment",
+               "has never had a flea treatment"),) * 2,
+    "microchip": (("microchipped", "not microchipped"),) * 2,
+    "litter": (("fully litter trained", "still learning to use the litter box"),
+               ("fully litter trained", "litter trained but kicks litter everywhere")),
+    "coat": (("a long fluffy coat", "a short coat"),) * 2,      # only where the breed does not already say it
+}
+UNSET_COAT = ("a mixed-breed tabby", "a calico", "an orange tabby of unknown breed")
+# How often each kind is drawn: how often real people write it when rehoming a cat (PetFinder.my Adoption Prediction,
+# Kaggle 2019, 6,570 English cat descriptions, counted 2026-10-14 for analysis only): rescued, stray or a reason for
+# rehoming 24% + 12%, food 21%, litter 21%, fleas or mites 3.6%, being picked up or carried 2.8%, microchip 0.4%.
+# Coat: grooming or fur 8.4% of the descriptions; a personal taste, so buyers can take it either way (owner, 2026-10-14).
+LIFE_WEIGHTS = {"origin": 3, "food": 2, "litter": 2, "handling": 1, "pests": 1, "microchip": 0.5, "coat": 1}
+
+
+def _life_options(kind: str, c: dict[str, Any]) -> list[str]:
+    """The facts of one kind that agree with the cat's sheet."""
+    options = list(LIFE_FACTS[kind][c["months"] >= 12])
+    sheet = " ".join([c["health"], *c.get("extra", [])])
+    if kind == "food" and any(w in sheet for w in ("diet", "insulin", "diabetic")):
+        return []                                           # the sheet already says what this cat eats
+    if kind == "pests" and "dewormed" in sheet:
+        options.remove("has never had a flea treatment")
+    if kind == "microchip" and "microchipped" in sheet:
+        return []
+    if kind == "litter" and "picky about litter" in c["quirks"]:
+        return []
+    if kind == "coat" and c["breed"] not in UNSET_COAT:
+        return []
+    return options
+
+
+def add_life_facts(seed: int, c: dict[str, Any]) -> None:
+    """One or two LIFE_FACTS on the cat's sheet (c["life_kinds"], c["life"]), from their own random draw, so the
+    facts sale_for_seed drew before stay exactly as they were."""
+    rng = random.Random(seed * 2003 + 11)
+    kinds = [k for k in LIFE_FACTS if _life_options(k, c)]
+    picked: list[str] = []
+    for _ in range(rng.choice((1, 2))):
+        left = [k for k in kinds if k not in picked]
+        picked.append(rng.choices(left, weights=[LIFE_WEIGHTS[k] for k in left])[0])
+    for kind in picked:
+        c.setdefault("life_kinds", []).append(kind)
+        c.setdefault("life", []).append(rng.choice(_life_options(kind, c)))
+
+
 def facts(s: Sale) -> str:
     """The cat's true facts in one line, as the seller is told them."""
     c = s["cat"]
+    extra = [f for f in c.get("extra", []) if not f.endswith(" old")]         # a new age is already c["age"]
     return (f"{c['age']} old, {c['breed']}, {c['home']}, {c['fixed']}, {c['health']}, {c['virus']}, "
             f"{c['company'][0]}, {c['company'][1]}, temperament: {c['temperament']}; also: {c['quirks'][0]}; "
-            f"{c['quirks'][1]}")
+            f"{c['quirks'][1]}" + "".join(f"; {f}" for f in extra + c.get("life", [])))
 
 
 BREED_TOPICS = {"a Ragdoll": "breed_hcm", "a Maine Coon": "breed_hcm", "a Persian": "breed_pkd",

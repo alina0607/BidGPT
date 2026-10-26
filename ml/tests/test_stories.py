@@ -284,3 +284,58 @@ def test_she_being_is_not_english():
     assert "not English" in stories.reaction_problem(row, card, 70, "Ruby", "She's a tabby.")
     row["says"] = "Being a tabby doesn't matter to me. Staying at $70."
     assert stories.reaction_problem(row, card, 70, "Ruby", "She's a tabby.") is None
+
+
+def test_human_seller_seeds_add_two_fitting_facts_and_leave_other_seeds_alone():
+    for seed in (2590, 2800, 2100):
+        assert stories.sale_for_seed(seed) == stories.seed_sale(random.Random(seed))
+    for seed in stories.HUMAN_SELLER_SEEDS:
+        c = stories.sale_for_seed(seed)["cat"]
+        assert len(c["extra"]) == len(set(c["extra_kinds"])) == 2
+        if "very old" in c["extra_kinds"]:
+            assert c["months"] >= 192
+        assert "papers" not in " ".join(c["extra"]) or c["breed"] in stories.PEDIGREE
+        if {"heart", "diabetes", "thyroid"} & set(c["extra_kinds"]):
+            assert c["health"] not in stories.CLEAN_BILL
+        assert all(f in stories.facts(stories.sale_for_seed(seed)) or f.endswith(" old") for f in c["extra"])
+
+
+def test_life_facts_only_on_unwritten_seeds_and_agree_with_the_sheet():
+    # 2026-10-14: what real adopters ask (origin, being picked up, food, fleas, microchip) goes only on seeds not yet
+    # written, one or two per cat, never against the sheet; the human-seller facts drawn before stay the same
+    for seed in (*range(2000, 2593), *range(2650, 2670)):
+        assert "life" not in stories.sale_for_seed(seed)["cat"]
+    for seed in stories.LIFE_SEEDS:
+        c = stories.sale_for_seed(seed)["cat"]
+        assert 1 <= len(c["life"]) <= 2 and len(set(c["life_kinds"])) == len(c["life_kinds"])
+        assert not ("microchipped" in c["health"] and "not microchipped" in c["life"])
+        assert not ("dewormed" in c["health"] and "has never had a flea treatment" in c["life"])
+        sheet = " ".join([c["health"], *c.get("extra", [])])
+        assert not ("food" in c["life_kinds"] and ("diet" in sheet or "insulin" in sheet))
+        if c["months"] < 12 and "origin" in c["life_kinds"]:
+            assert c["life"][c["life_kinds"].index("origin")] in stories.LIFE_FACTS["origin"][0]
+        assert all(f in stories.facts(stories.sale_for_seed(seed)) for f in c["life"])
+    human = stories.sale_for_seed(2670)["cat"]
+    assert len(human["extra"]) == 2 and human["life"]
+
+
+def test_no_vet_in_two_years_never_meets_a_recent_vet_fact_on_unwritten_seeds():
+    # 2026-10-14, seed 2686: "no vet visit in two years" met "had one heart episode last year, the vet says stable now";
+    # from VET_RULE_FROM on a sheet with no vet visit gets none of the facts that say a vet saw the cat lately
+    for seed in stories.HUMAN_SELLER_SEEDS:
+        c = stories.sale_for_seed(seed)["cat"]
+        if (seed >= stories.VET_RULE_FROM or seed in stories.VET_RULE_ALSO) and c["health"] == stories.NO_VET:
+            assert not set(stories.VET_LATELY) & set(c["extra_kinds"])
+    assert "heart" not in stories.sale_for_seed(2686)["cat"]["extra_kinds"]
+    assert "heart" in stories.sale_for_seed(2664)["cat"]["extra_kinds"]        # written before the rule: unchanged
+
+
+def test_no_vet_in_two_years_never_meets_a_cat_under_two_from_2700_on():
+    # 2026-10-26, seed 2718: "1 year old" and "no vet visit in two years" on one sheet
+    for seed in range(stories.YOUNG_NO_VET_FROM, 2800):
+        c = stories.sale_for_seed(seed)["cat"]
+        assert not (c["health"] == stories.NO_VET and c["months"] < 24)
+    assert stories.sale_for_seed(2718)["cat"]["age"] == "3 years"
+    for seed in stories.YOUNG_NO_VET_ALSO:              # the six written before the rule were fixed with their lines
+        c = stories.sale_for_seed(seed)["cat"]
+        assert not (c["health"] == stories.NO_VET and c["months"] < 24)
