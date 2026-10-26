@@ -479,9 +479,22 @@ def _mentions(names: frozenset[str] | tuple[str, ...], line: str) -> list[str]:
     return [n for n in names if re.search(rf"\b{re.escape(n)}s?\b", low)]
 
 
+def _name_at(thing: str, line: str) -> int | None:
+    """Where a line first names a thing (by its last word: "alarm clock" by "clock", "picture frame" by "frame")."""
+    found = re.search(rf"\b{re.escape(thing.split()[-1].lower())}", line.lower())
+    return found.start() if found else None
+
+
 def _named(thing: str, line: str) -> bool:
     """Whether a line names a thing (by its last word: "alarm clock" by "clock", "picture frame" by "frame")."""
-    return re.search(rf"\b{re.escape(thing.split()[-1].lower())}", line.lower()) is not None
+    return _name_at(thing, line) is not None
+
+
+def mention_order(things: list[str], line: str) -> list[str]:
+    """The things in the order the line first names them (prompt format 9 writes its list in this order); a thing
+    the line never names keeps its place after the named ones."""
+    at = {t: _name_at(t, line) for t in things}
+    return sorted(things, key=lambda t: (at[t] is None, at[t] or 0))
 
 
 def imagine_problem(row: dict[str, Any]) -> str | None:
@@ -507,6 +520,29 @@ def imagine_problem(row: dict[str, Any]) -> str | None:
     if other:
         return f"the line mentions {', '.join(other)}, which cannot be drawn; mention only the things picked"
     return None
+
+
+IMAGINE_KINDS = ("count", "off_list", "unnamed", "unpicked", "not_drawable")
+
+
+def imagine_kinds(row: dict[str, Any]) -> set[str]:
+    """Every rule of imagine_problem a scene breaks, by kind (imagine_problem stops at the first): for reports that
+    count which kinds of mistake a model makes. Empty exactly when imagine_problem is None."""
+    things, says = row.get("things"), str(row.get("says", ""))
+    if not isinstance(things, list) or len(things) != MAX_THINGS:
+        return {"count"}
+    picked = [str(t) for t in things]
+    kinds = set()
+    if any(t not in DRAWABLE_THINGS for t in picked):
+        kinds.add("off_list")
+    if any(not _named(t, says) for t in picked):
+        kinds.add("unnamed")
+    if any(not any(re.search(rf"\b{re.escape(n)}\b", t) for t in picked)
+           for n in _mentions(DRAWABLE_THINGS - EVERYDAY_WORDS, says)):
+        kinds.add("unpicked")
+    if any(not any(w in t for t in picked) for w in _mentions(NOT_DRAWABLE, says)):
+        kinds.add("not_drawable")
+    return kinds
 
 
 def _scene_problem(row: object, taken: list[set[str]]) -> str | None:
