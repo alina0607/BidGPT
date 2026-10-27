@@ -24,8 +24,20 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --config Release
+      - name: Build the DGL backend on the compat layer (it ships for Windows)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S . -B build-dglc -DCMAKE_BUILD_TYPE=Release -DSA_BACKEND_DGL_COMPAT=ON
+          cmake --build build-dglc --config Release --target sell_anything
       - name: Smoke test (headless backend)
         run: ctest --test-dir build -C Release --output-on-failure
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: End-to-end (the game plays a round against the ML server, headless)
+        run: |
+          pip install -e ml
+          python scripts/e2e_autoplay.py
 
   ml:
     name: ML service
@@ -39,8 +51,10 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install
-        run: pip install -e ".[dev]"
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev,train]"
       - name: Lint
-        run: ruff check .
+        run: ruff check . ../scripts
       - name: Test
         run: pytest

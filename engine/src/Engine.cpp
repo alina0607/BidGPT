@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <utility>
 
@@ -33,6 +35,16 @@ bool Engine::Run()
 
     running_ = true;
     auto previous = Clock::now();
+    // Capture-only deterministic clock: PNG encoding must not skip animation drawings in QA GIFs.
+    // Ordinary gameplay always keeps its real wall-clock delta.
+    double captureDt = 0.0;
+    if (std::getenv("SA_CAPTURE"))
+        if (const char* value = std::getenv("SA_CAPTURE_DT"))
+        {
+            const double requested = std::atof(value);
+            if (std::isfinite(requested) && requested >= 1.0 / 240 && requested <= config_.maxDeltaTime)
+                captureDt = requested;
+        }
 
     while (running_)
     {
@@ -50,7 +62,7 @@ bool Engine::Run()
             break;
 
         const auto now = Clock::now();
-        const double dt =
+        const double dt = captureDt > 0 ? captureDt :
             std::min(std::chrono::duration<double>(now - previous).count(), config_.maxDeltaTime);
         previous = now;
 

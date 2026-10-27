@@ -35,6 +35,8 @@ public:
     void DrawRect(Vec2 topLeft, Vec2 size, Color color) override;
 
     TextureId LoadTexture(const std::string& path, TextureFilter filter) override;
+    TextureId CreateTexture(int width, int height, const unsigned char* rgba, TextureFilter filter) override;
+    void UpdateTexture(TextureId texture, const unsigned char* rgba) override;
     Vec2 TextureSize(TextureId texture) const override;
     void DrawSprite(TextureId texture, UVRect source, Vec2 topLeft, Vec2 size, float alpha) override;
     void DrawSpriteFilled(TextureId texture, UVRect source, Vec2 topLeft, Vec2 size, Color color) override;
@@ -59,10 +61,10 @@ private:
         size_t count = 0;
     };
 
-    static constexpr int kKeyCount = static_cast<int>(Key::Down) + 1;
+    static constexpr int kKeyCount = static_cast<int>(Key::K) + 1;
 
     void PushQuad(const std::array<Vec2, 4>& corners, Color color, unsigned texture, UVRect uv);
-    static unsigned CreateTexture(const unsigned char* rgba, int width, int height,
+    static unsigned MakeGLTexture(const unsigned char* rgba, int width, int height,
                                   TextureFilter filter = TextureFilter::Pixel);
 
     GLFWwindow* window_ = nullptr;
@@ -93,6 +95,15 @@ private:
         unsigned last = 0;
     };
     std::vector<HeldKey> heldKeys_;
+    // SA_MOUSE: the left button and the cursor, scripted by keyframes (see Init).
+    struct MouseKey
+    {
+        Vec2 pos;
+        bool down = false;
+        unsigned frame = 0;
+    };
+    std::vector<MouseKey> mouseKeys_;
+    bool ScriptedMouse(Vec2& pos, bool& down) const;
     unsigned exitAfter_ = 0;
     unsigned frame_ = 0;
 

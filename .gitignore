@@ -10,6 +10,7 @@ Thumbs.db
 
 # C++ build
 build/
+build-*/
 cmake-build-*/
 out/
 .vs/
@@ -38,6 +39,7 @@ ml/data/raw/
 ml/data/processed/
 ml/checkpoints/
 ml/runs/
+ml/logs/
 wandb/
 *.pt
 *.pth
@@ -49,3 +51,6 @@ wandb/
 
 # Secrets
 .env
+
+# Notebook scratch output
+ml/notebooks/tokenizer_work/

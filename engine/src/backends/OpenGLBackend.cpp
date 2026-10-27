@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -51,16 +52,19 @@ in vec2 vUV;
 in vec4 vColor;
 uniform sampler2D uTexture;
 out vec4 fragColor;
-// Shapes use a 1x1 white texture, so one shader draws both shapes and sprites.
-void main() { fragColor = texture(uTexture, vUV) * vColor; }
+void main()
+{
+    fragColor = texture(uTexture, vUV) * vColor;
+}
 )";
 
 constexpr int kGlfwKeys[] = {GLFW_KEY_ESCAPE, GLFW_KEY_ENTER, GLFW_KEY_SPACE, GLFW_KEY_BACKSPACE,
                              GLFW_KEY_C,      GLFW_KEY_LEFT,  GLFW_KEY_RIGHT, GLFW_KEY_UP,
-                             GLFW_KEY_DOWN};
+                             GLFW_KEY_DOWN, GLFW_KEY_W, GLFW_KEY_A, GLFW_KEY_S, GLFW_KEY_D,
+                             GLFW_KEY_LEFT_SHIFT, GLFW_KEY_J, GLFW_KEY_K};
 constexpr const char* kKeyNames[] = {"escape", "enter", "space", "backspace", "c",
-                                     "left",   "right", "up",    "down"};
-static_assert(sizeof(kGlfwKeys) / sizeof(kGlfwKeys[0]) == static_cast<int>(Key::Down) + 1,
+                                     "left",   "right", "up",    "down", "w", "a", "s", "d", "shift", "j", "k"};
+static_assert(sizeof(kGlfwKeys) / sizeof(kGlfwKeys[0]) == static_cast<int>(Key::K) + 1,
               "kGlfwKeys must list every sa::Key in enum order");
 
 unsigned CompileShader(GLenum type, const char* source)
@@ -157,6 +161,24 @@ bool OpenGLBackend::Init(const WindowDesc& desc)
         }
     }
 
+    if (const char* spec = std::getenv("SA_MOUSE"))
+    {
+        // x:y:down@frame keyframes in frame order, e.g. 300:200:0@60,300:200:1@62,420:260:1@90,420:260:0@91: the
+        // cursor moves in a straight line from one keyframe to the next, the button held as the earlier one says.
+        // From the first keyframe on the real mouse is ignored, so a recorded drawing session runs the same way
+        // every time through the real input path.
+        std::stringstream list(spec);
+        std::string item;
+        while (std::getline(list, item, ','))
+        {
+            float x = 0, y = 0;
+            int down = 0;
+            unsigned frame = 0;
+            if (std::sscanf(item.c_str(), "%f:%f:%d@%u", &x, &y, &down, &frame) == 4)
+                mouseKeys_.push_back({{x, y}, down != 0, frame});
+        }
+    }
+
     if (!glfwInit())
     {
         std::cerr << "glfwInit failed\n";
@@ -167,6 +189,12 @@ bool OpenGLBackend::Init(const WindowDesc& desc)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE); // required on macOS
+#ifdef __APPLE__
+    // QA captures use logical resolution: Retina PNG encoding otherwise stalls the simulation.
+    // Ordinary play still uses the display's native Retina framebuffer.
+    if (!captures_.empty())
+        glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
+#endif
 
     window_ = glfwCreateWindow(desc.width, desc.height, desc.title.c_str(), nullptr, nullptr);
     if (!window_)
@@ -206,7 +234,7 @@ bool OpenGLBackend::Init(const WindowDesc& desc)
     glEnableVertexAttribArray(2);
 
     const unsigned char white[4] = {255, 255, 255, 255};
-    whiteTexture_ = CreateTexture(white, 1, 1);
+    whiteTexture_ = MakeGLTexture(white, 1, 1);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -242,7 +270,8 @@ bool OpenGLBackend::BeginFrame(Color clear)
         const bool scripted = std::any_of(heldKeys_.begin(), heldKeys_.end(), [this, i](const HeldKey& held) {
             return held.key == i && frame_ >= held.first && frame_ <= held.last;
         });
-        const bool down = glfwGetKey(window_, kGlfwKeys[i]) == GLFW_PRESS || scripted;
+        const bool down = glfwGetKey(window_, kGlfwKeys[i]) == GLFW_PRESS || scripted ||
+                          (i == static_cast<int>(Key::Shift) && glfwGetKey(window_, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS);
         keyPressed_[i] = down && !keyDown_[i];
         keyDown_[i] = down;
     }
@@ -267,6 +296,7 @@ void OpenGLBackend::EndFrame()
         glfwGetWindowSize(window_, &width, &height);
 
         glUseProgram(program_);
+        glUniform1i(glGetUniformLocation(program_, "uTexture"), 0);
         glUniform2f(screenSizeLocation_, static_cast<float>(width), static_cast<float>(height));
         glBindVertexArray(vao_);
         glBindBuffer(GL_ARRAY_BUFFER, vbo_);
@@ -276,9 +306,11 @@ void OpenGLBackend::EndFrame()
         // One draw call per run of quads that share a texture, in submission order.
         for (const Batch& batch : batches_)
         {
+            glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, batch.texture);
             glDrawArrays(GL_TRIANGLES, static_cast<GLint>(batch.first), static_cast<GLsizei>(batch.count));
         }
+        glActiveTexture(GL_TEXTURE0);
     }
     for (const Capture& capture : captures_)
     {
@@ -298,8 +330,31 @@ void OpenGLBackend::EndFrame()
         glfwSetWindowShouldClose(window_, GLFW_TRUE);
 }
 
+bool OpenGLBackend::ScriptedMouse(Vec2& pos, bool& down) const
+{
+    if (mouseKeys_.empty() || frame_ < mouseKeys_.front().frame)
+        return false;
+    size_t i = 0;
+    while (i + 1 < mouseKeys_.size() && mouseKeys_[i + 1].frame <= frame_)
+        ++i;
+    const MouseKey& a = mouseKeys_[i];
+    pos = a.pos;
+    down = a.down;
+    if (i + 1 < mouseKeys_.size())
+    {
+        const MouseKey& b = mouseKeys_[i + 1];
+        const float t = static_cast<float>(frame_ - a.frame) / static_cast<float>(b.frame - a.frame);
+        pos = {a.pos.x + (b.pos.x - a.pos.x) * t, a.pos.y + (b.pos.y - a.pos.y) * t};
+    }
+    return true;
+}
+
 Vec2 OpenGLBackend::MousePosition() const
 {
+    Vec2 scripted;
+    bool down = false;
+    if (ScriptedMouse(scripted, down))
+        return scripted;
     double x = 0.0, y = 0.0;
     glfwGetCursorPos(window_, &x, &y);
     return {static_cast<float>(x), static_cast<float>(y)};
@@ -307,6 +362,10 @@ Vec2 OpenGLBackend::MousePosition() const
 
 bool OpenGLBackend::MouseDown(MouseButton button) const
 {
+    Vec2 pos;
+    bool down = false;
+    if (ScriptedMouse(pos, down))
+        return button == MouseButton::Left && down;
     const int glfwButton =
         button == MouseButton::Left ? GLFW_MOUSE_BUTTON_LEFT : GLFW_MOUSE_BUTTON_RIGHT;
     return glfwGetMouseButton(window_, glfwButton) == GLFW_PRESS;
@@ -348,9 +407,29 @@ TextureId OpenGLBackend::LoadTexture(const std::string& path, TextureFilter filt
         std::cerr << "could not load texture " << path << '\n';
         return 0;
     }
-    const unsigned gl = CreateTexture(image->rgba.data(), image->width, image->height, filter);
+    const unsigned gl = MakeGLTexture(image->rgba.data(), image->width, image->height, filter);
     textures_.push_back({gl, {static_cast<float>(image->width), static_cast<float>(image->height)}});
     return static_cast<TextureId>(textures_.size());
+}
+
+TextureId OpenGLBackend::CreateTexture(int width, int height, const unsigned char* rgba, TextureFilter filter)
+{
+    if (width <= 0 || height <= 0 || !rgba)
+        return 0;
+    const unsigned gl = MakeGLTexture(rgba, width, height, filter);
+    textures_.push_back({gl, {static_cast<float>(width), static_cast<float>(height)}});
+    return static_cast<TextureId>(textures_.size());
+}
+
+void OpenGLBackend::UpdateTexture(TextureId texture, const unsigned char* rgba)
+{
+    if (texture < 1 || texture > textures_.size() || !rgba)
+        return;
+    const Texture& t = textures_[texture - 1];
+    glBindTexture(GL_TEXTURE_2D, t.gl);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, static_cast<int>(t.size.x), static_cast<int>(t.size.y), GL_RGBA,
+                    GL_UNSIGNED_BYTE, rgba);
 }
 
 Vec2 OpenGLBackend::TextureSize(TextureId texture) const
@@ -375,7 +454,7 @@ void OpenGLBackend::DrawSpriteFilled(TextureId texture, UVRect source, Vec2 topL
              textures_[texture - 1].gl, source);
 }
 
-unsigned OpenGLBackend::CreateTexture(const unsigned char* rgba, int width, int height, TextureFilter filter)
+unsigned OpenGLBackend::MakeGLTexture(const unsigned char* rgba, int width, int height, TextureFilter filter)
 {
     unsigned gl = 0;
     glGenTextures(1, &gl);
