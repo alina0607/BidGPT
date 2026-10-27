@@ -138,6 +138,11 @@ NO_VET = "vaccinated but no vet visit in two years"
 # cat is three years old instead (the same asking price step); of the earlier seeds only YOUNG_NO_VET_ALSO change.
 YOUNG_NO_VET_FROM = 2700
 YOUNG_NO_VET_ALSO = (2098, 2328, 2347, 2526, 2532, 2643)   # written before the rule; fixed with their lines (owner, 2026-10-26)
+# Found 2026-10-26 on seed 2793: a two month old kitten that "finished the kitten vaccine series", though boosters run to
+# about 16 to 18 weeks. From YOUNG_NO_VET_FROM on such a kitten is four months old instead (the same kitten price step);
+# of the earlier seeds only FULL_SERIES_ALSO change.
+FULL_SERIES = "finished the kitten vaccine series"
+FULL_SERIES_ALSO = (2251, 2609)     # written before the rule; fixed with their lines (2026-10-26)
 VET_LATELY = ("heart", "diabetes", "thyroid", "teeth")
 VET_RULE_FROM = 2686
 VET_RULE_ALSO = (2654,)
@@ -166,6 +171,9 @@ def sale_for_seed(seed: int) -> Sale:
     if (seed >= YOUNG_NO_VET_FROM or seed in YOUNG_NO_VET_ALSO) and s["cat"]["health"] == NO_VET and s["cat"]["months"] < 24:
         s["cat"]["months"] = 36                 # "no vet visit in two years" cannot fit a cat under two
         s["cat"]["age"] = _age(36)
+    if (seed >= YOUNG_NO_VET_FROM or seed in FULL_SERIES_ALSO) and s["cat"]["health"] == FULL_SERIES and s["cat"]["months"] < 4:
+        s["cat"]["months"] = 4                  # a finished kitten vaccine series cannot fit a two month old
+        s["cat"]["age"] = _age(4)
     if seed in LIFE_SEEDS and seed not in HUMAN_SELLER_SEEDS:
         add_life_facts(seed, s["cat"])
     if seed not in HUMAN_SELLER_SEEDS:
@@ -193,7 +201,7 @@ def sale_for_seed(seed: int) -> Sale:
 # Facts a real adopter asks about that no sheet had (owner, 2026-10-14, from a shelter's list of questions to ask:
 # how the cat came to be rehomed, being picked up, food, fleas and mites, microchip; litter and coat from PetFinder below). Only seeds not yet written get
 # them, so every stored sale keeps its sheet; one or two per cat, drawn so they never contradict the rest of it.
-LIFE_SEEDS = (*range(2593, 2650), *range(2670, 2800))     # 2700-2799 added 2026-10-26, before any was written
+LIFE_SEEDS = (*range(2593, 2650), *range(2670, 2900))     # 2700-2799 and 2800-2899 added 2026-10-26, before any was written
 LIFE_FACTS = {   # kind: facts for a kitten (under a year), facts for an older cat
     "origin": (("found as a stray kitten", "came from a neighbour's unplanned litter"),
                ("the previous owner moved abroad and could not take the cat", "rehomed because a family member became "
@@ -214,6 +222,9 @@ UNSET_COAT = ("a mixed-breed tabby", "a calico", "an orange tabby of unknown bre
 # Kaggle 2019, 6,570 English cat descriptions, counted 2026-10-14 for analysis only): rescued, stray or a reason for
 # rehoming 24% + 12%, food 21%, litter 21%, fleas or mites 3.6%, being picked up or carried 2.8%, microchip 0.4%.
 # Coat: grooming or fur 8.4% of the descriptions; a personal taste, so buyers can take it either way (owner, 2026-10-14).
+# A kitten from a litter has met its mother and littermates, so it cannot have "never met another cat" (found
+# 2026-10-26 on seed 2762); such a cat was found as a stray kitten instead. Five written sales were fixed with their lines.
+LITTER = "came from a neighbour's unplanned litter"
 LIFE_WEIGHTS = {"origin": 3, "food": 2, "litter": 2, "handling": 1, "pests": 1, "microchip": 0.5, "coat": 1}
 
 
@@ -246,6 +257,8 @@ def add_life_facts(seed: int, c: dict[str, Any]) -> None:
     for kind in picked:
         c.setdefault("life_kinds", []).append(kind)
         c.setdefault("life", []).append(rng.choice(_life_options(kind, c)))
+    if LITTER in c["life"] and "has never met another cat" in c["company"]:
+        c["life"][c["life"].index(LITTER)] = "found as a stray kitten"     # after the draw, so no other fact moves
 
 
 def facts(s: Sale) -> str:
