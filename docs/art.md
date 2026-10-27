@@ -130,7 +130,8 @@ Every screen is drawn in one world (`game/assets/stage/`), built from the owner'
 | `stall_cloth.png` (on black) | `stall.png` + `stall.json` | `cloth` is where one draws: the 1240-unit canvas the game keeps strokes in is shown there |
 | `cat_shelter.png` | `shelter.png` + `shelter.json` | `easels` are the eight blank canvases, for adoptable cats later |
 | `girl_idle.gif` (12 frames on cream) | `girl_idle.png` + `.json` | front view, cut out of the cream |
-| `girl_run.gif` + `girl_run_cycle_v3.png` | `girl_run.png` + `.json` | original start/stop transitions plus four equal 500 ms phases: stride A, crossing A, opposing stride B, crossing B. The cycle is scaled by one locked head size—not refitted by pose height—and every frame is graded to one measured value/saturation target. |
+| `run_idle_style_v1/frames/frame-<n>.png` | `girl_run.png` + `.json` | approved eight-pose loop at 120 ms per frame, preserved without recoloring or per-pose fitting; cells 1–8 are the active loop |
+| `girl_turn_v2/turn-sheet-final.png` + exact runtime idle reference | `girl_transition.png` + `.json` | 12 small-angle poses at 55 ms, reversed on return; common scale and foot registration. Replaces the historical turn's mismatched face and proportions. Cell 0 is pixel-identical to current idle. |
 | `girl_walk.gif` (30 frames) | `girl_walk.png` + `.json` | `parts` away 0–11 (up the screen, from behind), turn 12–17, toward 18–29 (down, facing the camera); the turn plays backwards to turn away |
 | `npc_<n>.gif` (30 frames) | `npc_<n>.png` + `.json` | a painted buyer: `parts` away 0–11 (walking up, seen from behind), turn 12–17, toward 18–29 (walking off, facing the camera) |
 | `Nunito.ttf` (SIL OFL, `fonts/OFL.txt`) | `fonts/nunito.png` + `.txt` | white glyphs at six sizes, drawn in any color |
@@ -145,9 +146,15 @@ gone. Add a buyer by dropping `npc_<n+1>.gif` into `art/stage/` and running the 
 image, world x of its centre (0 is the stall), the screen y it stands on (`bottom`) and its drawn `height`; the
 ground line, the girl's height and start, and the buyers' sprite scale.
 
-The girl (`Girl.h`) runs with ← →, walks up and down the screen with ↑ ↓ (turning round first when needed), and
-jumps with Space, except while a text field takes it (the AI field has focus, or an answer is being typed; a
-Space typed into an empty answer field is the jump, not a leading space). Every direction and action uses the
+The girl (`Girl.h`) moves with WASD or arrows, jumps with Space, slides with Shift, kicks with J and casts
+a heart wave with K. Clicking an input focuses it; focused input consumes gameplay keys (Esc leaves it).
+Horizontal running starts and stops through the idle-matched 0.66 s turn.
+Jump landing, sliding, kicking and casting finish through the same 0.66 s return.
+Idle keeps its original artwork/blink and adds a continuous torso breath (0–1.4 screen pixels of rise)
+and 0.65-pixel sway. The head translates rigidly without scaling, and boots remain fixed; the complete
+breath/sway cycle closes every 7.2 seconds. The old historical turn atlas is no longer used.
+Vertical walking finishes the current half-step over 0.30 s, keeping a rear-facing planted idle when appropriate.
+Every direction and action uses the
 same fixed figure height. There are no limits on where she may go yet. The camera stays put while she is in the middle of
 the screen and follows her past it. Faces (sheepish, angry, anxious;
 see `Stage.h`) are drawn only if `girl_<face>.png` exists; the old ones were in the previous drawing style.

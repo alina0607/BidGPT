@@ -1,5 +1,33 @@
 # Run-cycle generation provenance
 
+## Owner rejection of procedural turn deformation (2026-10-14)
+
+The v3 horizontal-band head/body warp and pose dissolves were rejected as visibly disjointed.
+They have been removed from the runtime and renderer. See
+[the character animation acceptance contract](quality/character-animation-contract.md).
+Do not restore those effects or treat `art/stage/girl_turn_v4` as approved; that candidate is
+also rejected. Turning is temporarily disabled pending matching full-frame artwork.
+
+## Owner-selected third frame (2026-10-11)
+
+The owner explicitly selected `exec-60d1c971-3345-4504-8d81-c8f991e8bd6e.png`,
+now preserved unchanged as `art/stage/run_sources/frame3_lower_approved.png`.
+Its tucked rear knee, continuous sock/ankle/boot connection and boot angle are authoritative.
+The later `exec-06ed5434` horizontal-boot variant was **not** selected. Do not substitute it,
+rotate the approved shoe, or redraw its leg to satisfy a different interpretation of the pose.
+
+`sh scripts/build_approved_run.sh` assembles the approved lower body into the third frame
+of `art/stage/girl_run_cycle_v5.png`. Frames 1, 2 and 4 are retained from v4; the third
+frame uses the original preview's upper body and a single uniform scale to match v4.
+The join lies inside the skirt, above the complete approved legs. It replaces RGBA pixels,
+including transparency, so the rejected old shoe cannot remain underneath.
+
+The runtime builder consumes v5 and uses four equal 160 ms phases (the requested faster
+preview speed). This integration reuses the selected built-in ImageGen output; no new
+image-generation prompt or repainting was performed.
+
+Earlier generation history follows; its descriptions are provenance, not additional owner approval.
+
 The accepted `art/stage/girl_run_cycle_v3.png` was assembled from two built-in ImageGen outputs, then normalized
 to one head width, head height, value and saturation. The animation audit checks the built sprite sheet rather
 than trusting these prompts.

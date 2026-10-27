@@ -1,6 +1,6 @@
 """Reject visible girl-animation regressions and render review artifacts.
 
-Checks the built sheets, not source promises: four equal 500 ms run phases, locked head dimensions,
+Checks the built sheets, not source promises: four equal 160 ms run phases, locked head dimensions,
 matched value/saturation, distinct opposing poses, and consistent scale across idle/walk/run.
 Writes /tmp/girl-animation-contact.png and /tmp/girl-run-audit.gif for human review.
 """
@@ -79,8 +79,8 @@ def main() -> int:
     cycle_ms = run_meta["frame_ms"][first:last + 1]
 
     checks: list[tuple[bool, str]] = []
-    checks.append((len(cycle) == 4 and cycle_ms == [500] * 4,
-                   f"four equal run phases at 500 ms: {cycle_ms}"))
+    checks.append((len(cycle) == 4 and cycle_ms == [160] * 4,
+                   f"four equal run phases at 160 ms: {cycle_ms}"))
     expected_gait = {
         "stride_a": {"frame": 1, "front_arm": "right", "front_leg": "left"},
         "stride_b": {"frame": 3, "front_arm": "left", "front_leg": "right"},

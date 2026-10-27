@@ -5,7 +5,8 @@
 Sources: background_tile_crossfade.png (the owner's watercolor strip, its ends cross-faded so it repeats
 without a seam), stall_cloth.png (the stall with its hanging cloth, on black), girl_idle.gif (12 front-facing
 frames on cream), cat_shelter.png (the shelter, on transparent, with eight empty easels),
-girl_run_cycle_v4.png (four equally timed contralateral gait phases),
+run_idle_style_v1/frames/frame-<n>.png (eight approved, idle-style running poses),
+girl_turn_v2/turn-sheet-final.png (idle-matched turn drawings, separate from the approved running loop),
 girl_walk.gif (30 frames: walking away from the camera, turning, walking towards it),
 npc_<n>.gif (a buyer: walking away from the camera, turning, walking towards it), npc_<n>_idle.png
 (the same buyer standing back-facing with both feet planted), Nunito.ttf (SIL OFL,
@@ -21,7 +22,6 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "art" / "stage"
@@ -33,14 +33,19 @@ SHEET_COLS = 16                                # keep every OpenGL texture safel
 FONT_SIZES = (14, 18, 22, 28, 36, 48)          # atlas sizes; text is drawn from the nearest larger one
 ROUND_PX, ROUND_SUPER, ROUND_RADIUS, ROUND_EDGE = 64, 4, 18, 10   # rounded texture: size, supersampling, corner, edge
 STALL_PX = 640                                 # stall texture height (drawn at layout.json's height)
-CLOTH = (420, 340, 1130, 830)                  # where one can draw on the cloth, in stall_cloth.png pixels
+# The cloth is drawn on as a square (owner, 2026-10-17): stall_cloth.png's plain rows between the upper and the lower
+# flower boxes (posts and cloth only) are stretched by STALL_STRETCH, so the cloth hangs lower, and CLOTH, the part one
+# can draw on, is square, in the stretched picture's pixels (it was (420, 340, 1130, 830), 710 × 490, before).
+STALL_STRETCH = (598, 708, 110)                # rows y0..y1 of stall_cloth.png become y1 - y0 + extra rows
+CLOTH = (475, 340, 1075, 940)                  # where one can draw on the cloth: 600 × 600
 GIRL_PX = 320                                  # girl texture height when standing (drawn at layout.json's)
-RUN_PARTS = {"start": (0, 0), "run": (1, 4), "stop": (5, 5)}
+RUN_PARTS = {"start": (0, 0), "run": (1, 8), "stop": (9, 9)}
+RUN_FRAME_MS = 120                             # midpoint of the 80 ms and 160 ms previews
 NPC_PARTS = {"away": (0, 11), "turn": (12, 17), "toward": (18, 29)}   # npc_<n>.gif and girl_walk.gif, inclusive
-JUMP_FRAMES = {"rise": 1, "top": 2, "fall": 3, "land": 5}
+JUMP_FRAMES = {"rise": 1, "top": 3, "fall": 5, "land": 9}
 RUN_GAIT = {
     "stride_a": {"frame": 1, "front_arm": "right", "front_leg": "left"},
-    "stride_b": {"frame": 3, "front_arm": "left", "front_leg": "right"},
+    "stride_b": {"frame": 5, "front_arm": "left", "front_leg": "right"},
 }
 SHELTER_PX = 880                               # shelter texture height: about the source's own
 # The blank canvases on the shelter's easels, in cat_shelter.png pixels: where adoptable cats will show.
@@ -54,6 +59,7 @@ LAYOUT = {"objects": [{"image": "stall", "x": 0, "bottom": 500, "height": 470},
 
 def keyed(frame: Image.Image, color: tuple[int, int, int]) -> Image.Image:
     """The figure without its flat background, including background trapped between the character's feet."""
+    from scipy import ndimage
     rgb = np.array(frame.convert("RGB")).astype(float)
     near = np.sqrt(((rgb - np.array(color, float)) ** 2).sum(-1)) < 22
     lab, _ = ndimage.label(near)
@@ -80,6 +86,7 @@ def keyed(frame: Image.Image, color: tuple[int, int, int]) -> Image.Image:
 
 def soft_edge(frame: Image.Image) -> Image.Image:
     """A GIF frame's all-or-nothing transparency, softened by a fraction of a pixel."""
+    from scipy import ndimage
     a = np.array(frame)
     alpha = (ndimage.gaussian_filter(a[..., 3] / 255.0, 0.6) * 255).astype(np.uint8)
     return Image.fromarray(np.dstack([a[..., :3], alpha]), "RGBA")
@@ -108,17 +115,18 @@ def grade_to(frame: Image.Image, target_value: float = 170.0, target_saturation:
 
 
 def gif_frames(path: Path) -> tuple[list[Image.Image], list[int]]:
-    im = Image.open(path)
     out, ms = [], []
-    for i in range(im.n_frames):
-        im.seek(i)
-        out.append(im.convert("RGBA"))
-        ms.append(int(im.info.get("duration", 100)))
+    with Image.open(path) as im:
+        for i in range(im.n_frames):
+            im.seek(i)
+            out.append(im.convert("RGBA"))
+            ms.append(int(im.info.get("duration", 100)))
     return out, ms
 
 
 def main_component(frame: Image.Image) -> Image.Image:
     """Remove disconnected transparent-edge paint flecks from one ImageGen sprite."""
+    from scipy import ndimage
     frame = frame.copy().convert("RGBA")
     alpha = np.array(frame.getchannel("A"))
     labelled, count = ndimage.label(alpha > 20)
@@ -226,18 +234,125 @@ def scaled_sheet(frames: list[Image.Image], name: str, ms: list[int], scales: li
     sheet(cells, name, ms, (round(left), cell_h), standing=GIRL_PX, **extra)
 
 
+def girl_run() -> None:
+    """Pack the approved eight-frame artwork without recoloring or per-frame fitting."""
+    cycle = [Image.open(SRC / "run_idle_style_v1" / "frames" / f"frame-{i}.png").convert("RGBA")
+             for i in range(8)]
+    if any(frame.size != (640, 724) for frame in cycle):
+        raise ValueError("approved run frames must share the 640x724 registration canvas")
+    # The straight-legged transition provides a planted start/stop/landing pose. One union crop and
+    # one common scale preserve the approved head registration and watercolor palette across all poses.
+    run = [cycle[3], *cycle, cycle[3]]
+    run_ms = [RUN_FRAME_MS] * len(run)
+    figure_sheet(run, "girl_run", run_ms, GIRL_PX, parts=RUN_PARTS, jump=JUMP_FRAMES,
+                 gait=RUN_GAIT)
+
+
+def girl_transitions() -> None:
+    """Pack the idle-matched small-angle turn, with the exact runtime idle as its endpoint."""
+    # This lightweight atlas packer also runs in the bundled Pillow/NumPy runtime without SciPy.
+    # Keep the connected character; remove disconnected generation residue in transparent gutters.
+    source = Image.open(SRC / "girl_turn_v2/turn-sheet-final.png").convert("RGBA")
+    frames = []
+    for row in range(3):
+        for col in range(4):
+            # Generated grids have small placement drift. Search slightly beyond nominal gutters
+            # and select the central connected sprite, rather than chopping a braid at a grid line.
+            frame = source.crop((max(0, round(col * source.width / 4) - 40),
+                                 max(0, round(row * source.height / 3) - 12),
+                                 min(source.width, round((col + 1) * source.width / 4) + 40),
+                                 min(source.height, round((row + 1) * source.height / 3) + 12)))
+            alpha = np.array(frame.getchannel("A"))
+            binary = Image.fromarray(np.where(alpha > 20, 255, 0).astype(np.uint8)).copy()
+            lo, hi = frame.width // 4, 3 * frame.width // 4
+            y = int(np.argmax((alpha[:, lo:hi] > 20).sum(axis=1)))
+            candidates = np.flatnonzero(alpha[y, lo:hi] > 20) + lo
+            x = int(candidates[len(candidates) // 2])
+            ImageDraw.floodfill(binary, (x, y), 128)
+            frame.putalpha(Image.fromarray(np.where(np.array(binary) == 128, alpha, 0).astype(np.uint8)))
+            left, top, right, bottom = visible_bbox(frame)
+            if left < 2 or top < 2 or right > frame.width - 2 or bottom > frame.height - 2:
+                raise ValueError(f"turn pose {row * 4 + col} touches crop edge; inspect the source gutters")
+            frames.append(frame)
+    _, top, _, bottom = visible_bbox(frames[0])
+    factor = GIRL_PX / (bottom - top)
+    # Preserve one common scale across the generated poses. The endpoint is copied from the
+    # authoritative existing idle, not another generated rendition of her face.
+    frames[0] = Image.open(SRC / "girl_turn_v2/idle-reference.png").convert("RGBA")
+    scaled_sheet(frames, "girl_transition", [55] * 12, [1.0] + [factor] * 11,
+                 parts={"start": (0, 11), "stop": (0, 11), "settle": (0, 11)},
+                 source="art/stage/girl_turn_v2/turn-sheet-final.png", source_frames=list(range(12)),
+                 reverse_return=True, common_scale=factor)
+
+
+def girl_actions() -> None:
+    """Pack approved poses with fixed registration; physics alone supplies jump displacement."""
+    source = SRC / "girl_actions_v1"
+    manifest = json.loads((source / "manifest.json").read_text())
+    jump_baselines = [460, 460, 438, 400, 375, 430, 460, 460]
+    for name, action in manifest["actions"].items():
+        frames = []
+        for i, entry in enumerate(action["frames"]):
+            frame = Image.open(source / entry["file"]).convert("RGBA")
+            if frame.size != (512, 512):
+                raise ValueError("approved action frames must be 512x512")
+            if name == "jump":
+                registered = Image.new("RGBA", frame.size)
+                registered.paste(frame, (0, 460 - jump_baselines[i]))
+                frame = registered
+            frames.append(frame)
+        # One scale per action based on its ready pose, NEVER normalize crouches or extended kicks.
+        _, top, _, bottom = visible_bbox(frames[0])
+        factor = GIRL_PX / (bottom - top)
+        side = round(512 * factor)
+        cells = [frame.resize((side, side), Image.LANCZOS) for frame in frames]
+        sheet(cells, "girl_" + name, [entry["duration_ms"] for entry in action["frames"]],
+              (round(270 * factor), round(460 * factor)), standing=GIRL_PX,
+              parts={"action": (1, 7)}, loop=False, source="girl_actions_v1")
+
+
+def girl_heart_attack() -> None:
+    """Register six approved hand poses without changing their colors or proportions."""
+    source = SRC / "heart_attack_v1"
+    image = Image.open(source / "cast-sheet-v2.png").convert("RGBA")
+    if image.size != (1536, 1024):
+        raise ValueError("heart cast extraction expects the selected 1536x1024 source")
+    # Crop in the actual transparent gutters: the fourth pose's extended hand crosses x=512.
+    boxes = [(0, 0, 500, 516), (500, 0, 992, 516), (992, 0, 1536, 516),
+             (0, 516, 541, 1024), (541, 516, 1018, 1024), (1018, 516, 1536, 1024)]
+    registered = []
+    for box in boxes:
+        frame = image.crop(box)
+        left, top, right, bottom = visible_bbox(frame)
+        # Feet, not hair mass, define the horizontal root. Translation only; no per-pose scale.
+        alpha = np.array(frame.getchannel("A"))
+        feet = alpha[max(top, bottom - 50):bottom] > 20
+        xs = np.nonzero(feet)[1]
+        foot_x = round((int(xs.min()) + int(xs.max())) / 2)
+        canvas = Image.new("RGBA", (640, 640))
+        canvas.paste(frame, (320 - foot_x, 600 - bottom))
+        registered.append(canvas)
+    _, top, _, bottom = visible_bbox(registered[0])
+    factor = GIRL_PX / (bottom - top)
+    side = round(640 * factor)
+    cells = [frame.resize((side, side), Image.LANCZOS) for frame in registered]
+    sheet(cells, "girl_cast", [80, 100, 100, 140, 120, 100],
+          (round(320 * factor), round(600 * factor)), standing=GIRL_PX,
+          parts={"action": (1, 5)}, source="heart_attack_v1", loop=False, release_ms=200)
+    # A distinct runtime effect, alpha kept intact (including the semi-transparent glow).
+    wave = Image.open(source / "heart-wave.png").convert("RGBA")
+    wave.thumbnail((640, 320), Image.LANCZOS)
+    wave.save(STAGE / "heart_wave.png", optimize=True)
+
+
 def girl() -> None:
     idle, idle_ms = gif_frames(SRC / "girl_idle.gif")
     idle = [grade_girl_idle(keyed(f, idle[0].convert("RGB").getpixel((1, 1)))) for f in idle]
-    cycle = grid_frames(SRC / "girl_run_cycle_v4.png", 4, 1)
-    # One art source for start, loop and stop: no mid-run head/body/style swap. Passing poses bookend
-    # the loop; the two stride poses use opposite arm/leg pairs.
-    run = [cycle[1], *cycle, cycle[3]]
-    run_ms = [160, 500, 500, 500, 500, 160]
-    run = [grade_to(frame) for frame in run]
     figure_sheet(idle, "girl_idle", idle_ms, GIRL_PX)
-    figure_sheet(run, "girl_run", run_ms, GIRL_PX, parts=RUN_PARTS, jump=JUMP_FRAMES,
-                 gait=RUN_GAIT)
+    girl_run()
+    girl_transitions()
+    girl_actions()
+    girl_heart_attack()
     walk, walk_ms = gif_frames(SRC / "girl_walk.gif")
     figure_sheet([soft_edge(f) for f in walk], "girl_walk", walk_ms, GIRL_PX, parts=NPC_PARTS)
 
@@ -256,7 +371,14 @@ def npcs() -> None:
 
 
 def stall() -> None:
-    src = np.array(Image.open(SRC / "stall_cloth.png").convert("RGB")).astype(float)
+    original = Image.open(SRC / "stall_cloth.png").convert("RGB")
+    y0, y1, extra = STALL_STRETCH
+    w, h = original.size
+    stretched = Image.new("RGB", (w, h + extra))
+    stretched.paste(original.crop((0, 0, w, y0)), (0, 0))
+    stretched.paste(original.crop((0, y0, w, y1)).resize((w, y1 - y0 + extra), Image.LANCZOS), (0, y0))
+    stretched.paste(original.crop((0, y1, w, h)), (0, y1 + extra))
+    src = np.array(stretched).astype(float)
     alpha = np.clip((src.max(-1) - 12) / 60, 0, 1)            # the black background, faded at soft edges
     rgb = np.clip(src / np.maximum(alpha, 1e-3)[..., None], 0, 255)
     im = Image.fromarray(np.dstack([rgb.astype(np.uint8), (alpha * 255).astype(np.uint8)]), "RGBA")

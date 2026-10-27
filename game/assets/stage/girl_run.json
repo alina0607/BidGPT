@@ -1,22 +1,26 @@
 {
  "cell": [
-  309,
-  324
+  319,
+  330
  ],
  "anchor": [
-  155,
-  322
+  165,
+  324
  ],
- "cols": 6,
+ "cols": 10,
  "rows": 1,
- "frames": 6,
+ "frames": 10,
  "frame_ms": [
-  160,
-  500,
-  500,
-  500,
-  500,
-  160
+  120,
+  120,
+  120,
+  120,
+  120,
+  120,
+  120,
+  120,
+  120,
+  120
  ],
  "standing": 320,
  "parts": {
@@ -26,18 +30,18 @@
   ],
   "run": [
    1,
-   4
+   8
   ],
   "stop": [
-   5,
-   5
+   9,
+   9
   ]
  },
  "jump": {
   "rise": 1,
-  "top": 2,
-  "fall": 3,
-  "land": 5
+  "top": 3,
+  "fall": 5,
+  "land": 9
  },
  "gait": {
   "stride_a": {
@@ -46,7 +50,7 @@
    "front_leg": "left"
   },
   "stride_b": {
-   "frame": 3,
+   "frame": 5,
    "front_arm": "left",
    "front_leg": "right"
   }

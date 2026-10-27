@@ -1,0 +1,59 @@
+{
+ "cell": [
+  367,
+  329
+ ],
+ "anchor": [
+  224,
+  327
+ ],
+ "cols": 12,
+ "rows": 1,
+ "frames": 12,
+ "frame_ms": [
+  55,
+  55,
+  55,
+  55,
+  55,
+  55,
+  55,
+  55,
+  55,
+  55,
+  55,
+  55
+ ],
+ "standing": 320,
+ "parts": {
+  "start": [
+   0,
+   11
+  ],
+  "stop": [
+   0,
+   11
+  ],
+  "settle": [
+   0,
+   11
+  ]
+ },
+ "source": "art/stage/girl_turn_v2/turn-sheet-final.png",
+ "source_frames": [
+  0,
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11
+ ],
+ "reverse_return": true,
+ "common_scale": 0.9907120743034056
+}

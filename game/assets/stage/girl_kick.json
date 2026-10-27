@@ -1,0 +1,32 @@
+{
+ "cell": [
+  453,
+  453
+ ],
+ "anchor": [
+  239,
+  405
+ ],
+ "cols": 8,
+ "rows": 1,
+ "frames": 8,
+ "frame_ms": [
+  200,
+  100,
+  100,
+  90,
+  90,
+  100,
+  120,
+  220
+ ],
+ "standing": 320,
+ "parts": {
+  "action": [
+   1,
+   7
+  ]
+ },
+ "loop": false,
+ "source": "girl_actions_v1"
+}
