@@ -1,0 +1,17 @@
+{
+  "checkpoint": "checkpoints/buyer_gpt.pt",
+  "data": "data/processed/buyers_v5",
+  "sample": 300,
+  "metrics": {
+    "test_seen/ask/valid": 1.0,
+    "test_seen/ask/on_topic": 1.0,
+    "test_seen/react/valid": 1.0,
+    "test_seen/react/delta_exact": 0.9809,
+    "test_seen/react/delta_sign": 0.9904,
+    "test_heldout/ask/valid": 0.9885,
+    "test_heldout/ask/on_topic": 0.9195,
+    "test_heldout/react/valid": 1.0,
+    "test_heldout/react/delta_exact": 0.7251,
+    "test_heldout/react/delta_sign": 0.7583
+  }
+}

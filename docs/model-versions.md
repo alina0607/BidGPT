@@ -21,8 +21,9 @@ Sales (inputs of every version so far):
 |---|---|---|
 | `ml/data/processed/buyer_sales_v9_official.jsonl` | 48 (Qwen v9, every line read and corrected by Alina Chuang) | 16b9d429130d1872 |
 | `data/written_sales/sales.jsonl` | 52 (written by Alina Chuang, seeds 2048–2099) | c5870d2559bc5cf3 |
+| `data/written_sales/sales_b2_150.jsonl` | 150 (written by Alina Chuang, seeds 2200–2349; B2 and B2f6) | 78084aa4366674f7 |
 
-### B1 (2026-10-12) — in the game now
+### B1 (2026-10-12) — in the game until 2026-10-13 (since then the game loads B3, `ml/runs/sft_b3_resume/best.pt`; B3 and B4 have no section here yet)
 
 - **Data**: `ml/data/processed/buyers_b1/` — prompt format 4 (the card shows a budget), K = 2 full rounds plus the
   earlier questions; 90 sales train / 10 val (by seed hash); train 9,956 examples (900 open, 824 ask, 7,470 react,
@@ -63,11 +64,13 @@ Sales (inputs of every version so far):
 
 - **Data**: `ml/data/processed/buyers_b2/` — prompt format 5: the card has no budget (owner, 2026-10-12: buyers have
   no spending limit, their moves only have to be reasonable); everything else as B1 (K = 2). Sources: the 100 sales
-  of B1 plus the 150 sales of seeds 2200–2349 (`data/written_sales/sales_b2.jsonl` as it was at 16:01; the file has
-  grown since, so its hash then is not recorded). 223 sales train / 27 val (by seed hash: B1's 10 val sales plus 17
+  of B1 plus the 150 sales of seeds 2200–2349, kept as they were at 16:01 in `data/written_sales/sales_b2_150.jsonl`
+  (78084aa4366674f7; `sales_b2.jsonl` has grown since, and its first 150 sales are still identical to this snapshot).
+  223 sales train / 27 val (by seed hash: B1's 10 val sales plus 17
   new ones); train 25,836 examples (2,230 open, 2,106 ask, 19,513 react, 1,987 imagine), val 3,193.
   train.jsonl 6043ee1a47a79cc6, val.jsonl 16f7326c10afd42a (both written 2026-10-12 16:01, a minute before the
-  upload). Built by `PYTHONPATH=. python -m sellanything_ml.buyers.sales_sft`.
+  upload). Rebuilt byte for byte (2026-10-13) by `PYTHONPATH=. python -m sellanything_ml.buyers.sales_sft`, whose
+  sources now point to the snapshot.
 - **Training**: one Modal A100-40GB, `cd ml && modal run tools/modal_sft_b2.py` — same recipe as B1 (`--init
   runs/pretrain_large/final.pt --epochs 3 --lr 3e-4`) with `--batch 16 --eval-every 500 --max-minutes 25`; 4,844
   steps at about 0.09 s a step. Log `runs/sft_b2/train.log`, Modal log `runs/sft_b2_modal.log`.
@@ -96,9 +99,67 @@ Sales (inputs of every version so far):
   sentences); both models misread "fully vaccinated" as "no vaccinations" on the old set; not yet played as a live
   sale.
 
+### B2f6 (2026-10-12/13) — trained, not in the game
+
+B2 again on exactly the same sales, in prompt format 6, to test two of notebook 6's proposed changes: one token per
+drawable thing, and the buyer's persona and the kind of animal as tokens.
+
+- **Data**: `ml/data/processed/buyers_b2_f6/` — prompt format 6: as format 5, but the item is `<|cat|>`, the persona on
+  the card is one token (`Chloe, <|buyer:is a student on a tight budget|> | cares about: …`) and a scene's list is three
+  thing tokens (`<|thing:laptop|><|thing:book|><|thing:coffee cup|> | line`). 363 new tokens (2 animals, 17 personas,
+  344 things) after the 14 older added tokens; vocabulary 8,569; no older id moves. Same 250 sales and split as B2
+  (sources as B2, with `sales_b2_150.jsonl`): train 25,836 examples, val 3,193. train.jsonl 71225ea1eb715d38, val.jsonl
+  ab063c6923c719db; rebuilt byte for byte (2026-10-13) by
+  `PYTHONPATH=. python -m sellanything_ml.buyers.sales_sft --prompt-format 6 --out <dir>`.
+- **Training** (this Mac's GPU, 2026-10-12 21:45 → 2026-10-13 00:29):
+  ```
+  PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.8 PYTORCH_MPS_LOW_WATERMARK_RATIO=0.7 PYTHONPATH=. \
+  python -m sellanything_ml.llm.sft --init runs/pretrain_large/final.pt --data data/processed/buyers_b2_f6 \
+      --epochs 3 --batch 16 --lr 3e-4 --eval-every 500 --run-dir runs/sft_b2f6
+  ```
+  4,844 steps, 2.0 s a step on average. Each new token's embedding (and, tied, its output row) starts as the mean of
+  the rows of its words' tokens (`llm/model.py start_rows_from_words`). A first attempt with watermarks 0.6/0.5 ran out
+  of MPS memory at once (`train_attempt1_oom.log`).
+- **Weights**: `ml/runs/sft_b2f6/best.pt` (0d65462db2b31dc5, step 3,000, val loss 1.334), `last.pt`
+  (69ba4556d5eb6d2f, step 4,844, with optimizer state). Logs: `train.log`, `metrics.jsonl`.
+- **Validation loss**: 1.710 (500) → 1.570 → 1.475 → 1.444 → 1.394 → 1.334 (3,000) → 1.363 → 1.357 → 1.345 → 1.342
+  (4,844); train loss about 0.6 at the end. Not comparable with B2's 1.316: a thing is now one token, so the scene
+  targets have fewer tokens.
+- **Held-out evaluation** (same tool, sampling and prompts as B2, written in format 6:
+  `runs/eval_sets_b2f6/val_old_format6.jsonl` 386d33dc98981e43, `val_new_format6.jsonl` 55724b6ffc720ffc; all 3,193
+  prompts and answers equal B2's once the tokens are written back as words). Reports and samples in
+  `ml/runs/sft_b2f6/eval/` (run by `eval/after_training.sh` on the Mac's GPU right after training).
+
+  | | old B1 | old B2 | old B2f6 | new B1 | new B2 | new B2f6 |
+  |---|---|---|---|---|---|---|
+  | open readable | 100% | 100% | 100% | 97.6% | 98.2% | 100% |
+  | ask new in meaning | 89.8% | 90.8% | 92.9% | 96.9% | 98.2% | 96.3% |
+  | react passes the rules | 90.2% | 90.4% | 90.0% | 86.7% | 92.3% | 93.1% |
+  | react same direction as the sale | 78.8% | 77.5% | 76.1% | 67.4% | 74.2% | 72.8% |
+  | react offer off by | $2.52 | $2.58 | $2.54 | $4.62 | $2.93 | $3.38 |
+  | react walk-aways (sale) | 14 (11) | 10 (11) | 14 (11) | 39 (18) | 14 (18) | 22 (18) |
+  | imagine passes the rules | 70.8% | 38.2% | 50.6% | 59.9% | 11.9% | 14.5% |
+
+- **Experiments** (CPU, `ml/runs/sft_b2f6/`, read in notebook 6 §10): scenes picking their own things pass 27.4% (B2
+  27.8%); 13% of B2f6's lists are not three thing tokens; given the written things, a thing seen 1–9 times in training
+  is used 6% of the time (B2 24%), and its word gets a median probability of 0.012 when listed (B2 0.183). Persona and
+  misread results: notebook 6 §10.3–10.4.
+- **Code**: `buyers/format.py` (format-6 tokens), `buyers/sales_sft.py` (`--prompt-format 6`, `SOURCES_B2`),
+  `buyers/cat_market.py` (reads thing tokens), `llm/model.py` (`start_rows_from_words`), `llm/sft.py` (vocabulary
+  growth for format 6), tests `test_sales_sft.py`, `test_cat_market.py`; experiments `tools/probe_imagine.py`,
+  `probe_scene_list.py` (`--sets`), `probe_list_tokens.py`, `probe_persona_swap.py`, `probe_misread.py`.
+- **Known problems**: rare things are worse than in B2; lists of other words between thing tokens; not played as a
+  live sale.
+
 ---
 
 ## Brush GPT (cat painting, `ml/sellanything_ml/sketch/brushgpt.py`)
+
+**In the game since 2026-10-27 (the cat shelter, `ml/sellanything_ml/sketch/shelter.py`):** Brush GPT L8
+(`brushgpt_l.py`, `ml/runs/brushgpt/L8/best.pt`) paints the face, then the eye model E5 (`eyegpt_l8.py`,
+`ml/runs/brushgpt/E5/best.pt`, brushes in `brushes.json` from `ml/tools/eye_brushes.py`) paints the eyes from what L8
+produced. Both at temperature 1, every cat sampled once, nothing picked. On the Mac's CPU a cat takes about 75–90 s
+(the face about 1,850–2,000 strokes, the eyes 192). Before that the shelter used run I below.
 
 All on one Modal A100 (`ml/tools/modal_brushgpt.py --runs <name>`), d512 × 7 layers, 8 heads, 27,885,568
 parameters, batch 8 × accumulation 2, lr 3e-4, early stop on validation loss; 256 samples evaluated per run. Each run
