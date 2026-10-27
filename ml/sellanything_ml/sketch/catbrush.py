@@ -36,6 +36,7 @@ STAGES = [(96, 40, 24), (56, 22, 64), (32, 12, 160), (18, 7, 360), (10, 4, 600)]
 ITERS = 150
 SIZE_RANGE = (0.5, 1.5)          # a stroke's length and width, as multiples of its stage's
 ALPHA_RANGE = (0.3, 1.0)
+BRISTLE = 0.06                   # bristle streaks: +-6% brightness, about three streaks along a stroke (0: a smooth digital brush)
 EDGE_PX = 0.5                    # edge softness in pixels: coverage falls from 88% to 12% over about 2 px
 WINDOW_MARGIN = 4                # coverage 4 px outside the edge is sigmoid(-8) ≈ 3e-4: a window may stop there
 # Windows wider than this share of the canvas cost more than painting the whole canvas (measured on MPS:
@@ -122,7 +123,7 @@ def rounded_rect(brush: Brush, px: torch.Tensor, py: torch.Tensor) -> tuple[torc
     qx, qy = u.abs() - (brush.half_length - rho).clamp(min=0), v.abs() - (brush.half_width - rho)
     outside = (qx.clamp(min=0) ** 2 + qy.clamp(min=0) ** 2 + 1e-8).sqrt()   # eps: sqrt has no slope at 0
     sdf = outside + torch.maximum(qx, qy).clamp(max=0) - rho
-    return torch.sigmoid(-sdf / EDGE_PX), 1 + 0.06 * torch.sin(v / brush.half_width * 9.0 + brush.x0)
+    return torch.sigmoid(-sdf / EDGE_PX), 1 + BRISTLE * torch.sin(v / brush.half_width * 9.0 + brush.x0)
 
 
 def window_half(base: tuple[float, float]) -> int:

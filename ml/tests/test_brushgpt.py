@@ -79,6 +79,28 @@ def test_one_output_layer_per_field_samples_only_valid_tokens():
     assert torch.isfinite(loss)
 
 
+def test_sampling_after_a_prefix_keeps_it_and_matches_stepping_through_it():
+    import torch
+    from sellanything_ml.llm.model import GPT
+    cfg = G.Config(d_model=32, n_layers=2, n_heads=2, n_kv_heads=2, heads=True, points=True)
+    torch.manual_seed(0)
+    model = GPT(G.model_config(cfg)).eval()
+    model.brush_cfg = cfg
+    rows = G.sample(model, 2, batch=2, seed=1)
+    bos = rows[:, :1]
+    assert (G.sample(model, 2, batch=2, seed=5, prefix=bos) == G.sample(model, 2, batch=2, seed=5)).all()
+    cut = 1 + G.PREFIX + 1 + 5 * G.STROKES[0]                       # BOS, points, stage 0 marker and strokes
+    gen = G.sample(model, 2, batch=2, seed=5, prefix=rows[:, :cut])
+    assert (gen[:, :cut] == rows[:, :cut]).all() and G.valid(gen).all()
+    t = torch.from_numpy(gen)                                       # filling the cache at once = token by token
+    cache = [{"size": t.size(1)} for _ in model.blocks]
+    with torch.no_grad():
+        model(t[:, :cut], cache=cache)
+        step, _ = model(t[:, cut:cut + 1], cache=cache, start_pos=cut)
+        full, _ = model(t[:, :cut + 1])
+    assert torch.allclose(step[:, -1], full[:, -1], atol=1e-4)
+
+
 def test_face_points_come_first_and_mirror_with_the_painting():
     pts = np.array([[[80.2, 140.0], [170.0, 141.5], [126.0, 190.0], [40, 60], [35, 10], [70, 40],
                      [180, 40], [215, 10], [210, 60]]], float)
@@ -101,6 +123,20 @@ def test_eye_strokes_marks_the_strokes_near_the_eyes():
     eyes = G.eye_strokes(row, pts)
     assert eyes[0, xs[0]:xs[0] + 5].all() and eyes[0, xs[1]:xs[1] + 5].all() and not eyes[0, xs[2]:xs[2] + 5].any()
     assert not eyes[0, :xs[0]].any()
+
+
+def test_eye_weights_can_leave_the_position_of_eye_strokes_unweighted():
+    pts = np.zeros((1, G.POINTS, 2))
+    pts[0, 0], pts[0, 1] = (80, 140), (170, 140)
+    row = painting(5)
+    x0 = np.flatnonzero(G.SLOT == 1)[0]                               # the first stroke: put it on the left eye
+    row[0, x0], row[0, x0 + 1] = T.OFFSET["x"] + 80, T.OFFSET["y"] + 140
+    every = G.loss_weights(row, pts, 3.0)
+    assert (every[0, x0:x0 + 5] == 3).all()                           # all five tokens of the eye stroke
+    look = G.loss_weights(row, pts, 3.0, position=False)
+    assert (look[0, x0:x0 + 2] == 1).all() and (look[0, x0 + 2:x0 + 5] == 3).all()   # x, y at 1; angle, size, colour at 3
+    assert ((look == 3) == (every == 3) & ~np.isin(G.SLOT, [1, 2])).all()           # nothing else changes
+    assert G.Config().eye_weight_position                             # runs before this option weighted every token
 
 
 def test_a_model_with_face_points_samples_valid_rows_and_trains_with_eye_weights():

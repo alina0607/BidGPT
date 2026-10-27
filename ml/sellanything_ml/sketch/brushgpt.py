@@ -38,7 +38,11 @@ mouth, ears; the landmark model's for AFHQ, hand-labelled for the CAT dataset) a
 The model generates the points itself and paints after them, so it decides where the eyes are before the small
 strokes that make them. Eye weighting (`eye_weight`): the loss of every token of a stroke whose centre lies within
 EYE_ZONE eye-to-eye distances of an eye counts eye_weight times (1 = off). The validation loss is always reported
-unweighted, with the eye strokes' own loss ("eye") next to it.
+unweighted, with the eye strokes' own loss ("eye") next to it. Weighting a stroke's x and y tokens also teaches the
+model to put strokes in the eye region more often: runs F, G, I and J paint about twice as many strokes there as the
+real paintings (F 134 per painting against D's 74, measured 2026-10-18). With `eye_weight_position` off, only the
+angle, size and colour tokens of eye strokes are weighted, so the model learns how eye strokes look without being told
+to paint more of them.
 
 Aligned faces (`align` stage, devlog 2026-10-11 §9): the shape GPT, whose cats always had eyes, drew catface.py's
 faces aligned by their points (eyes level, at fixed pixels). The same is done to finished paintings without
@@ -169,6 +173,16 @@ def split_of(rel: str) -> str:
         return "test"
     h = int(hashlib.sha1(Path(rel).stem.encode()).hexdigest(), 16)
     return "val" if h % 100 < VAL_PERCENT else "train"
+
+
+def loss_weights(rows: np.ndarray, points: np.ndarray, eye_weight: float, position: bool = True) -> np.ndarray:
+    """(n, len) float32 loss weights: eye_weight on the tokens of every eye stroke (eye_strokes), 1 elsewhere. With
+    `position` off, an eye stroke's x and y tokens keep weight 1, so where it goes is learned like any stroke's."""
+    w = np.where(eye_strokes(rows, points), eye_weight, 1.0).astype(np.float32)
+    if not position:
+        slot = layout_of(rows)[2]
+        w[:, (slot == 1 + FIELDS.index("x")) | (slot == 1 + FIELDS.index("y"))] = 1.0
+    return w
 
 
 def mirror(rows: np.ndarray) -> np.ndarray:
@@ -406,6 +420,7 @@ class Config:
     heads: bool = False              # one output layer per field (see the module docstring)
     points: bool = False             # the face points first (see the module docstring)
     eye_weight: float = 1.0          # loss weight of eye-region strokes (1 = off)
+    eye_weight_position: bool = True # eye_weight on the x and y tokens of eye strokes too (see the module docstring)
     resume: bool = False             # continue from the run's last.pt if there is one (see `train`)
     keep_every: int = 0              # also keep the weights every this many steps, as step_NNNNN.pt (0 = off)
 
@@ -451,9 +466,12 @@ def load_rows(data: Path, split: str, cats: int = 0, order: str = "list",
     return rows, z["ids"][keep]
 
 
-def load_points(data: Path, split: str, cats: int = 0, mirrored: bool = False) -> np.ndarray:
-    """The face points (n, POINTS, 2) of the rows load_rows gives for the same arguments."""
+def load_points(data: Path, split: str, cats: int = 0, mirrored: bool = False) -> np.ndarray | None:
+    """The face points (n, POINTS, 2) of the rows load_rows gives for the same arguments; None for a token file made
+    before the face points were stored (tokens_trial_1792.npz, the data of runs A-C)."""
     z = np.load(data)
+    if "points" not in z.files:
+        return None
     return z["points_mirror" if mirrored else "points"][_kept(z, split, cats)]
 
 
@@ -619,12 +637,17 @@ def train(cfg: Config, data: Path = DATA_FILE, run_dir: Path = RUN_DIR) -> Path:
     train_rows, train_ids = load_rows(data, "train", cfg.cats, cfg.order, points=cfg.points)
     train_pts = load_points(data, "train", cfg.cats)
     val_rows, _ = load_rows(data, "val", 0, cfg.order, points=cfg.points)
-    val_eyes = eye_strokes(val_rows, load_points(data, "val"))
+    has_points = train_pts is not None                  # False for token files made before the points were stored
+    if not has_points and (cfg.points or cfg.eye_weight != 1):
+        raise ValueError(f"{data} has no face points: --points and --eye-weight need them")
+    val_eyes = eye_strokes(val_rows, load_points(data, "val")) if has_points else None
     if cfg.mirror:
         train_rows = np.concatenate([train_rows, load_rows(data, "train", cfg.cats, cfg.order, mirrored=True,
                                                            points=cfg.points)[0]])
-        train_pts = np.concatenate([train_pts, load_points(data, "train", cfg.cats, mirrored=True)])
-    weights = np.where(eye_strokes(train_rows, train_pts), cfg.eye_weight, 1.0).astype(np.float32)
+        if has_points:
+            train_pts = np.concatenate([train_pts, load_points(data, "train", cfg.cats, mirrored=True)])
+    weights = (loss_weights(train_rows, train_pts, cfg.eye_weight, cfg.eye_weight_position) if has_points
+               else np.ones(train_rows.shape, np.float32))
     mask = allowed(dev, cfg.points) if cfg.heads else None
     torch.manual_seed(cfg.seed)
     model = GPT(model_config(cfg)).to(dev)
@@ -718,25 +741,32 @@ def load_model(path: Path, dev: str = "cpu") -> "GPT":
     return model.to(dev).eval()
 
 
-def sample(model: "GPT", n: int, temperature: float = 1.0, seed: int = 0, batch: int = 64) -> np.ndarray:
+def sample(model: "GPT", n: int, temperature: float = 1.0, seed: int = 0, batch: int = 64,
+           prefix: np.ndarray | None = None) -> np.ndarray:
     """n new paintings, (n, SEQ) tokens, sampled from BOS one token at a time with a preallocated KV cache. With one
     output layer per field (the model's config `heads`), each position samples among its field's tokens only;
-    otherwise among all tokens, with nothing removed."""
+    otherwise among all tokens, with nothing removed. With `prefix` ((n, L) tokens starting with BOS), each row
+    starts as its prefix row and the model writes the rest; a prefix of BOS alone is the same as none."""
     import torch
     dev = next(model.parameters()).device.type
     cfg = getattr(model, "brush_cfg", None) or Config()
     mask = allowed(dev, cfg.points) if cfg.heads else None
     seq = SEQ + (PREFIX if cfg.points else 0)
+    if prefix is not None and (len(prefix) != n or (prefix[:, 0] != T.BOS).any()):
+        raise ValueError("prefix must have n rows, each starting with BOS")
     torch.manual_seed(seed)
     out, watch = [], Watchdog("sample batch", baseline=1, window=1)
     for i in range(0, n, batch):
         t0 = time.time()
         b = min(batch, n - i)
         rows = torch.full((b, seq), T.BOS, dtype=torch.long, device=dev)
+        start = 1 if prefix is None else prefix.shape[1]
+        if prefix is not None:
+            rows[:, :start] = torch.from_numpy(np.asarray(prefix[i:i + b], dtype=np.int64)).to(dev)
         cache = [{"size": seq} for _ in model.blocks]
         with torch.no_grad(), autocast(dev):
-            logits, _ = model(rows[:, :1], cache=cache)
-            for p in range(1, seq):
+            logits, _ = model(rows[:, :start], cache=cache)
+            for p in range(start, seq):
                 last = field_logits(logits[:, -1:].float(), p, mask)[:, 0] / temperature
                 rows[:, p] = torch.multinomial(last.softmax(-1), 1)[:, 0]
                 if p < seq - 1:
