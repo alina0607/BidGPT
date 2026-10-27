@@ -110,3 +110,22 @@ def test_per_example_loss_gives_every_example_the_same_weight():
     _, _, per_example = collate(batch, 0, torch.device("cpu"), per_example=True)
     assert per_token.sum(1).tolist() == [2.0, 7.0]
     assert torch.allclose(per_example.sum(1), torch.tensor([1.0, 1.0]))
+
+
+def test_accum_gives_the_same_step_as_one_batch():
+    import copy
+    from types import SimpleNamespace
+    from sellanything_ml.llm.sft import _Run
+    torch.manual_seed(0)
+    batch = [(torch.randint(1, 97, (n,)).tolist(), p) for n, p in ((9, 3), (20, 5), (14, 13), (30, 2), (11, 4))]
+    base, after = GPT(GPTConfig(vocab_size=97, d_model=64, n_layers=2, n_heads=4, n_kv_heads=2, max_seq_len=64)), []
+    for accum, loss in ((1, "per-token"), (2, "per-token"), (3, "per-token"), (1, "per-example"), (2, "per-example")):
+        m = copy.deepcopy(base)
+        args = SimpleNamespace(accum=accum, loss=loss, dtype="float32")
+        run = _Run(args, m, SimpleNamespace(pad_id=0), {}, torch.device("cpu"), [], [], [])
+        value = run.step(torch.optim.SGD(m.parameters(), lr=0.1), batch, 0.1)
+        after.append((loss, value.item(), m))
+    for i, j in ((0, 1), (0, 2), (3, 4)):
+        assert abs(after[i][1] - after[j][1]) < 1e-5
+        for a, b in zip(after[i][2].parameters(), after[j][2].parameters(), strict=True):
+            assert torch.allclose(a, b, atol=1e-6)

@@ -2,6 +2,9 @@
 
     python -m sellanything_ml.llm.pretrain --preset small --tokens 300_000_000
 
+With --init the run continues pre-training a finished checkpoint (its config and weights, a fresh optimizer) on
+another dataset, e.g. knowledge texts mixed into FineWeb-Edu.
+
 Resumable (rerun the same command). Every --eval-every steps: validation loss on fixed batches,
 a short generated sample, and a checkpoint. Metrics go to <run-dir>/metrics.jsonl.
 """
@@ -108,6 +111,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-dir", type=Path, default=ML_DIR / "runs" / "pretrain")
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR, help="folder with train.bin and val.bin")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--init", type=Path, help="continue pre-training this checkpoint (ignores --preset)")
     parser.add_argument("--dtype", choices=["float32", "bfloat16", "float16"], default="bfloat16",
                         help="autocast precision for the forward pass (weights stay float32)")
     return parser.parse_args()
@@ -145,8 +149,12 @@ def main() -> None:
     torch.manual_seed(args.seed)
     device = pick_device()
     tok = Tokenizer(TOKENIZER_DIR / f"{args.tokenizer}.model")
-    cfg = GPTConfig(vocab_size=tok.vocab_size, max_seq_len=MAX_SEQ_LEN, **PRESETS[args.preset])
+    start = torch.load(args.init, map_location="cpu") if args.init else None
+    cfg = GPTConfig(**start["config"]) if start else \
+        GPTConfig(vocab_size=tok.vocab_size, max_seq_len=MAX_SEQ_LEN, **PRESETS[args.preset])
     model = GPT(cfg).to(device)
+    if start:
+        model.load_state_dict(start["model"])
     optimizer = make_optimizer(model, args.lr, args.weight_decay)
 
     tokens_per_step = args.batch * args.block * args.accum
@@ -156,7 +164,7 @@ def main() -> None:
     args.run_dir.mkdir(parents=True, exist_ok=True)
     last = args.run_dir / "last.pt"
     step = resume(model, optimizer, last, device)
-    print(f"model {model.num_params():,} params ({args.preset}), {total_steps:,} steps × "
+    print(f"model {model.num_params():,} params ({args.init or args.preset}), {total_steps:,} steps × "
           f"{tokens_per_step:,} tokens = {total_steps * tokens_per_step / 1e6:.0f}M tokens; "
           f"train.bin has {len(train.data) / 1e6:.0f}M tokens; device {device}", flush=True)
 

@@ -137,7 +137,8 @@ NO_VET = "vaccinated but no vet visit in two years"
 # Found 2026-10-26 on seed 2718: a one year old cat "with no vet visit in two years". From YOUNG_NO_VET_FROM on such a
 # cat is three years old instead (the same asking price step); of the earlier seeds only YOUNG_NO_VET_ALSO change.
 YOUNG_NO_VET_FROM = 2700
-YOUNG_NO_VET_ALSO = (2098, 2328, 2347, 2526, 2532, 2643)   # written before the rule; fixed with their lines (owner, 2026-10-26)
+YOUNG_NO_VET_ALSO = (2098, 2328, 2347, 2526, 2532, 2643,   # written before the rule; fixed with their lines (owner, 2026-10-26)
+                     2301, 2310, 2505, 2622, 2628, 2637)   # exactly two years old (owner, 2026-10-27): the kitten shots fall inside the two years
 # Found 2026-10-26 on seed 2793: a two month old kitten that "finished the kitten vaccine series", though boosters run to
 # about 16 to 18 weeks. From YOUNG_NO_VET_FROM on such a kitten is four months old instead (the same kitten price step);
 # of the earlier seeds only FULL_SERIES_ALSO change.
@@ -168,8 +169,8 @@ def sale_for_seed(seed: int) -> Sale:
     22 years) and one or two LIFE_FACTS on the LIFE_SEEDS. Every tool that writes or checks a sale on a seed uses
     this, so the sheet and the stored sale agree."""
     s = seed_sale(random.Random(seed))
-    if (seed >= YOUNG_NO_VET_FROM or seed in YOUNG_NO_VET_ALSO) and s["cat"]["health"] == NO_VET and s["cat"]["months"] < 24:
-        s["cat"]["months"] = 36                 # "no vet visit in two years" cannot fit a cat under two
+    if (seed >= YOUNG_NO_VET_FROM or seed in YOUNG_NO_VET_ALSO) and s["cat"]["health"] == NO_VET and s["cat"]["months"] <= 24:
+        s["cat"]["months"] = 36                 # "no vet visit in two years" cannot fit a cat of two or under
         s["cat"]["age"] = _age(36)
     if (seed >= YOUNG_NO_VET_FROM or seed in FULL_SERIES_ALSO) and s["cat"]["health"] == FULL_SERIES and s["cat"]["months"] < 4:
         s["cat"]["months"] = 4                  # a finished kitten vaccine series cannot fit a two month old
@@ -201,7 +202,7 @@ def sale_for_seed(seed: int) -> Sale:
 # Facts a real adopter asks about that no sheet had (owner, 2026-10-14, from a shelter's list of questions to ask:
 # how the cat came to be rehomed, being picked up, food, fleas and mites, microchip; litter and coat from PetFinder below). Only seeds not yet written get
 # them, so every stored sale keeps its sheet; one or two per cat, drawn so they never contradict the rest of it.
-LIFE_SEEDS = (*range(2593, 2650), *range(2670, 2900))     # 2700-2799 and 2800-2899 added 2026-10-26, before any was written
+LIFE_SEEDS = (*range(2593, 2650), *range(2670, 3000))     # 2700-2899 added 2026-10-26, 2900-2999 on 10-27, before any was written
 LIFE_FACTS = {   # kind: facts for a kitten (under a year), facts for an older cat
     "origin": (("found as a stray kitten", "came from a neighbour's unplanned litter"),
                ("the previous owner moved abroad and could not take the cat", "rehomed because a family member became "

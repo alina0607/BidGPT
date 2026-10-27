@@ -22,6 +22,9 @@ import torch.nn.functional as F
 from torch import nn
 
 
+MASKED_ROUND = 256          # forward(masked_only=True) rounds the number of counted positions up to this
+
+
 @dataclass
 class GPTConfig:
     """Model size and shape. Saved with every checkpoint (`to_dict`) so a run can be loaded without guessing."""
@@ -205,9 +208,11 @@ class GPT(nn.Module):
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None,
                 loss_mask: torch.Tensor | None = None, cache: list[dict[str, torch.Tensor | int]] | None = None,
-                start_pos: int = 0) -> tuple[torch.Tensor, torch.Tensor | None]:
+                start_pos: int = 0, masked_only: bool = False) -> tuple[torch.Tensor | None, torch.Tensor | None]:
         """idx (B, T) → logits (B, T, V). With targets, also mean cross-entropy over positions
-        where loss_mask is 1 (all positions when no mask is given)."""
+        where loss_mask is 1 (all positions when no mask is given). masked_only (with a loss_mask): the output layer
+        runs only on the positions the mask counts and no logits are returned; the same loss, far less memory
+        (SFT targets are a small part of each example: the full (B, T, V) logits made MPS run out, 2026-10-13)."""
         T = idx.size(1)
         cos = self.rope_cos[start_pos:start_pos + T]
         sin = self.rope_sin[start_pos:start_pos + T]
@@ -216,6 +221,15 @@ class GPT(nn.Module):
             x = x + self.pos(torch.arange(start_pos, start_pos + T, device=idx.device))
         for i, block in enumerate(self.blocks):
             x = block(x, cos, sin, None if cache is None else cache[i])
+        if masked_only and targets is not None and loss_mask is not None:
+            weight = loss_mask.reshape(-1).float()
+            # the counted positions, padded with zero-weight ones to a multiple of MASKED_ROUND so MPS sees a few
+            # shapes instead of a new one every batch
+            k = min(weight.numel(), math.ceil(int((weight > 0).sum()) / MASKED_ROUND) * MASKED_ROUND)
+            keep = torch.topk(weight, k).indices
+            picked = self.head(self.norm(x.reshape(-1, x.size(-1))[keep]))
+            loss = F.cross_entropy(picked, targets.reshape(-1)[keep], reduction="none")
+            return None, (loss * weight[keep]).sum() / weight.sum().clamp(min=1)
         logits = self.head(self.norm(x))
         if targets is None:
             return logits, None
@@ -290,3 +304,12 @@ def grow_vocab(model: GPT, vocab_size: int) -> GPT:
     state["embed.weight"] = state["head.weight"] = table
     grown.load_state_dict(state)
     return grown
+
+
+@torch.no_grad()
+def start_rows_from_words(model: GPT, rows: dict[int, list[int]]) -> None:
+    """Start each new token's row (embedding and, tied, output) as the mean of the rows of the tokens of its words,
+    so a token such as <|thing:alarm clock|> begins near what the model already knows about "alarm clock"."""
+    table = model.embed.weight
+    for row, words in rows.items():
+        table[row] = table[words].mean(0)

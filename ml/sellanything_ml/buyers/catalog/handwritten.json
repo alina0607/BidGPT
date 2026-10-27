@@ -1,0 +1,422 @@
+{
+  "version": 1,
+  "currency": "USD",
+  "items": {
+    "apple": {
+      "noun": "apple",
+      "price": {"low": 0.25, "typical": 1.0, "high": 4.0},
+      "attributes": {
+        "freshness": {
+          "question": "How fresh is the apple?",
+          "options": [
+            {"id": "just_picked", "answer": "Picked this morning.", "factor": 1.3, "signals": {"condition": 2}},
+            {"id": "few_days", "answer": "A few days old, still crisp.", "factor": 1.0, "signals": {"condition": 1}},
+            {"id": "week_plus", "answer": "About a week old, a bit soft.", "factor": 0.6, "signals": {"condition": -1}},
+            {"id": "bruised", "answer": "It has a couple of bruises.", "factor": 0.4, "signals": {"condition": -2}}
+          ]
+        },
+        "variety": {
+          "question": "What kind of apple is it?",
+          "options": [
+            {"id": "premium", "answer": "Honeycrisp.", "factor": 1.5, "signals": {"status": 1, "style": 1}},
+            {"id": "common", "answer": "Gala.", "factor": 1.0, "signals": {}},
+            {"id": "unknown", "answer": "No idea, it's from a tree in my yard.", "factor": 0.8, "signals": {"status": -1}}
+          ]
+        },
+        "size": {
+          "question": "How big is it?",
+          "options": [
+            {"id": "large", "answer": "Big, fills your whole hand.", "factor": 1.2, "signals": {"performance": 1}},
+            {"id": "medium", "answer": "Normal size.", "factor": 1.0, "signals": {}},
+            {"id": "small", "answer": "Pretty small.", "factor": 0.7, "signals": {"performance": -1}}
+          ]
+        },
+        "organic": {
+          "question": "Is it organic?",
+          "options": [
+            {"id": "yes", "answer": "Yes, no pesticides.", "factor": 1.25, "signals": {"family": 1, "status": 1}},
+            {"id": "no", "answer": "No, regular.", "factor": 1.0, "signals": {}}
+          ]
+        }
+      }
+    },
+    "banana": {
+      "noun": "bunch of bananas",
+      "price": {"low": 0.5, "typical": 2.0, "high": 6.0},
+      "attributes": {
+        "ripeness": {
+          "question": "How ripe are the bananas?",
+          "options": [
+            {"id": "green", "answer": "Still a little green.", "factor": 1.0, "signals": {"condition": 1}},
+            {"id": "yellow", "answer": "Perfectly yellow.", "factor": 1.15, "signals": {"condition": 2}},
+            {"id": "spotty", "answer": "Getting some brown spots.", "factor": 0.7, "signals": {"condition": -1}},
+            {"id": "brown", "answer": "Mostly brown, good for banana bread.", "factor": 0.35, "signals": {"condition": -2}}
+          ]
+        },
+        "count": {
+          "question": "How many are in the bunch?",
+          "options": [
+            {"id": "one", "answer": "Just one.", "factor": 0.3, "signals": {"performance": -1}},
+            {"id": "few", "answer": "Three or four.", "factor": 0.8, "signals": {}},
+            {"id": "full", "answer": "A full bunch of six or seven.", "factor": 1.2, "signals": {"family": 1, "performance": 1}}
+          ]
+        },
+        "organic": {
+          "question": "Are they organic?",
+          "options": [
+            {"id": "yes", "answer": "Yes, organic.", "factor": 1.25, "signals": {"family": 1, "status": 1}},
+            {"id": "no", "answer": "No, regular ones.", "factor": 1.0, "signals": {}}
+          ]
+        }
+      }
+    },
+    "bicycle": {
+      "noun": "bicycle",
+      "price": {"low": 25, "typical": 150, "high": 900},
+      "attributes": {
+        "age": {
+          "question": "How old is the bike?",
+          "options": [
+            {"id": "under_1", "answer": "Less than a year.", "factor": 1.3, "signals": {"condition": 1}},
+            {"id": "1_3", "answer": "About two years.", "factor": 1.0, "signals": {}},
+            {"id": "3_7", "answer": "Around five years.", "factor": 0.75, "signals": {"condition": -1}},
+            {"id": "older", "answer": "Over ten years old.", "factor": 0.5, "signals": {"condition": -1, "status": 1}}
+          ]
+        },
+        "condition": {
+          "question": "What shape is it in? Any rust or damage?",
+          "options": [
+            {"id": "like_new", "answer": "Like new, no scratches.", "factor": 1.2, "signals": {"condition": 2}},
+            {"id": "minor", "answer": "A few scratches, rides fine.", "factor": 1.0, "signals": {"condition": 0}},
+            {"id": "needs_tuneup", "answer": "It needs a tune-up and new brakes.", "factor": 0.7, "signals": {"condition": -1, "low_maintenance": -1}},
+            {"id": "rusty", "answer": "Rusty chain and a flat tire.", "factor": 0.45, "signals": {"condition": -2, "low_maintenance": -1}}
+          ]
+        },
+        "type": {
+          "question": "What kind of bike is it?",
+          "options": [
+            {"id": "road", "answer": "A road bike, really fast.", "factor": 1.3, "signals": {"performance": 2, "active": 1}},
+            {"id": "mountain", "answer": "A mountain bike with suspension.", "factor": 1.2, "signals": {"active": 2, "performance": 1}},
+            {"id": "city", "answer": "A city bike with a basket.", "factor": 1.0, "signals": {"low_maintenance": 1, "style": 1}},
+            {"id": "kids", "answer": "A kids' bike.", "factor": 0.5, "signals": {"family": 2, "space": 1}}
+          ]
+        },
+        "size": {
+          "question": "What frame size is it?",
+          "options": [
+            {"id": "small", "answer": "Small frame, folds a bit.", "factor": 1.0, "signals": {"space": 2}},
+            {"id": "medium", "answer": "Medium, fits most adults.", "factor": 1.0, "signals": {}},
+            {"id": "large", "answer": "Large frame, for tall riders.", "factor": 0.95, "signals": {"space": -1}}
+          ]
+        },
+        "brand": {
+          "question": "What brand is it?",
+          "options": [
+            {"id": "known", "answer": "Trek.", "factor": 1.3, "signals": {"status": 2, "performance": 1}},
+            {"id": "generic", "answer": "A store brand.", "factor": 0.85, "signals": {"status": -1}},
+            {"id": "unknown", "answer": "Not sure, the sticker came off.", "factor": 0.95, "signals": {}}
+          ]
+        }
+      }
+    },
+    "cat": {
+      "noun": "cat",
+      "price": {"low": 10, "typical": 75, "high": 1500},
+      "attributes": {
+        "age": {
+          "question": "How old is the cat?",
+          "options": [
+            {"id": "kitten", "answer": "A three-month-old kitten.", "factor": 1.3, "signals": {"family": 1, "low_maintenance": -1}},
+            {"id": "adult", "answer": "Two years old.", "factor": 1.0, "signals": {"low_maintenance": 1}},
+            {"id": "senior", "answer": "She's eleven.", "factor": 0.5, "signals": {"low_maintenance": 1, "condition": -1}}
+          ]
+        },
+        "breed": {
+          "question": "What breed is the cat?",
+          "options": [
+            {"id": "pedigree", "answer": "A purebred Maine Coon, with papers.", "factor": 4.0, "signals": {"status": 2, "space": -1}},
+            {"id": "mixed", "answer": "A regular mixed-breed cat.", "factor": 1.0, "signals": {}}
+          ]
+        },
+        "litter": {
+          "question": "Is the cat litter trained?",
+          "options": [
+            {"id": "yes", "answer": "Yes, never misses.", "factor": 1.1, "signals": {"low_maintenance": 2}},
+            {"id": "no", "answer": "Not reliably yet.", "factor": 0.75, "signals": {"low_maintenance": -2, "condition": -1}}
+          ]
+        },
+        "temperament": {
+          "question": "What's the cat's personality like?",
+          "options": [
+            {"id": "cuddly", "answer": "Super cuddly, loves people.", "factor": 1.15, "signals": {"family": 2}},
+            {"id": "independent", "answer": "Independent, does her own thing.", "factor": 1.0, "signals": {"low_maintenance": 1}},
+            {"id": "shy", "answer": "Shy, hides from strangers.", "factor": 0.85, "signals": {"family": -1}},
+            {"id": "feisty", "answer": "Feisty, she scratches sometimes.", "factor": 0.7, "signals": {"family": -2}}
+          ]
+        },
+        "health": {
+          "question": "Is the cat vaccinated and healthy?",
+          "options": [
+            {"id": "vaccinated", "answer": "Fully vaccinated, recent vet check.", "factor": 1.15, "signals": {"condition": 2, "family": 1}},
+            {"id": "unknown", "answer": "I'm not sure about the shots.", "factor": 0.85, "signals": {"condition": -1}}
+          ]
+        }
+      }
+    },
+    "dog": {
+      "noun": "dog",
+      "price": {"low": 20, "typical": 200, "high": 2500},
+      "attributes": {
+        "age": {
+          "question": "How old is the dog?",
+          "options": [
+            {"id": "puppy", "answer": "A ten-week-old puppy.", "factor": 1.4, "signals": {"family": 1, "low_maintenance": -2}},
+            {"id": "young", "answer": "Two years old.", "factor": 1.0, "signals": {"active": 1}},
+            {"id": "senior", "answer": "He's nine.", "factor": 0.5, "signals": {"low_maintenance": 1, "active": -1}}
+          ]
+        },
+        "breed": {
+          "question": "What breed is the dog?",
+          "options": [
+            {"id": "pedigree", "answer": "A purebred golden retriever, with papers.", "factor": 4.0, "signals": {"status": 2, "family": 1}},
+            {"id": "mixed", "answer": "A friendly mixed breed.", "factor": 1.0, "signals": {}}
+          ]
+        },
+        "potty": {
+          "question": "Is the dog potty trained?",
+          "options": [
+            {"id": "yes", "answer": "Yes, fully potty trained.", "factor": 1.15, "signals": {"low_maintenance": 2}},
+            {"id": "mostly", "answer": "Mostly, the odd accident.", "factor": 1.0, "signals": {"low_maintenance": -1}},
+            {"id": "no", "answer": "Not yet.", "factor": 0.8, "signals": {"low_maintenance": -2, "condition": -1}}
+          ]
+        },
+        "temperament": {
+          "question": "What's the dog's personality like?",
+          "options": [
+            {"id": "calm", "answer": "Calm and gentle, great with kids.", "factor": 1.15, "signals": {"family": 2, "low_maintenance": 1, "active": -1}},
+            {"id": "energetic", "answer": "Very energetic, needs long walks.", "factor": 1.0, "signals": {"active": 2, "low_maintenance": -1, "space": -1}},
+            {"id": "anxious", "answer": "A bit anxious around strangers.", "factor": 0.8, "signals": {"family": -1}},
+            {"id": "protective", "answer": "Protective, barks at strangers.", "factor": 0.9, "signals": {"family": -1, "performance": 1}}
+          ]
+        },
+        "size": {
+          "question": "How big will the dog get?",
+          "options": [
+            {"id": "small", "answer": "Small, under ten kilos.", "factor": 1.0, "signals": {"space": 2}},
+            {"id": "medium", "answer": "Medium, about twenty kilos.", "factor": 1.0, "signals": {}},
+            {"id": "large", "answer": "Big, over thirty kilos.", "factor": 1.0, "signals": {"space": -2, "active": 1}}
+          ]
+        }
+      }
+    },
+    "cell phone": {
+      "noun": "phone",
+      "price": {"low": 20, "typical": 220, "high": 1100},
+      "attributes": {
+        "model_age": {
+          "question": "Which model is it, and how old?",
+          "options": [
+            {"id": "latest", "answer": "Last year's flagship.", "factor": 2.5, "signals": {"status": 2, "performance": 2}},
+            {"id": "recent", "answer": "About two years old.", "factor": 1.0, "signals": {"performance": 1}},
+            {"id": "older", "answer": "Four years old.", "factor": 0.45, "signals": {"performance": -1, "status": -1}}
+          ]
+        },
+        "storage": {
+          "question": "How much storage does it have?",
+          "options": [
+            {"id": "large", "answer": "256 gigabytes.", "factor": 1.2, "signals": {"performance": 1}},
+            {"id": "medium", "answer": "128 gigabytes.", "factor": 1.0, "signals": {}},
+            {"id": "small", "answer": "Only 64.", "factor": 0.85, "signals": {"performance": -1}}
+          ]
+        },
+        "battery": {
+          "question": "How's the battery health?",
+          "options": [
+            {"id": "great", "answer": "Battery health is 95 percent.", "factor": 1.1, "signals": {"condition": 1, "performance": 1}},
+            {"id": "ok", "answer": "Around 85 percent.", "factor": 1.0, "signals": {}},
+            {"id": "poor", "answer": "About 72 percent, it dies by evening.", "factor": 0.7, "signals": {"condition": -1, "performance": -2}}
+          ]
+        },
+        "screen": {
+          "question": "Any cracks or scratches on the screen?",
+          "options": [
+            {"id": "perfect", "answer": "Perfect, always had a screen protector.", "factor": 1.1, "signals": {"condition": 2}},
+            {"id": "light", "answer": "A few light scratches.", "factor": 0.95, "signals": {"condition": -1}},
+            {"id": "cracked", "answer": "There's a crack in the corner.", "factor": 0.55, "signals": {"condition": -2, "style": -1}}
+          ]
+        },
+        "unlocked": {
+          "question": "Is it unlocked or tied to a carrier?",
+          "options": [
+            {"id": "unlocked", "answer": "Fully unlocked.", "factor": 1.1, "signals": {"low_maintenance": 1}},
+            {"id": "locked", "answer": "Locked to my carrier.", "factor": 0.8, "signals": {"low_maintenance": -1}}
+          ]
+        }
+      }
+    },
+    "chair": {
+      "noun": "chair",
+      "price": {"low": 5, "typical": 40, "high": 500},
+      "attributes": {
+        "type": {
+          "question": "What kind of chair is it?",
+          "options": [
+            {"id": "office", "answer": "An ergonomic office chair.", "factor": 2.0, "signals": {"performance": 2, "space": -1}},
+            {"id": "dining", "answer": "A dining chair.", "factor": 1.0, "signals": {"family": 1}},
+            {"id": "armchair", "answer": "A big padded armchair.", "factor": 2.5, "signals": {"style": 1, "space": -2}},
+            {"id": "folding", "answer": "A folding chair.", "factor": 0.5, "signals": {"space": 2, "style": -1}}
+          ]
+        },
+        "material": {
+          "question": "What's it made of?",
+          "options": [
+            {"id": "wood", "answer": "Solid oak.", "factor": 1.4, "signals": {"style": 2, "condition": 1}},
+            {"id": "metal", "answer": "Metal frame.", "factor": 1.0, "signals": {"low_maintenance": 1}},
+            {"id": "plastic", "answer": "Plastic.", "factor": 0.6, "signals": {"style": -1, "low_maintenance": 1}}
+          ]
+        },
+        "condition": {
+          "question": "What condition is it in?",
+          "options": [
+            {"id": "like_new", "answer": "Like new.", "factor": 1.2, "signals": {"condition": 2}},
+            {"id": "some_wear", "answer": "Some wear on the seat.", "factor": 0.9, "signals": {"condition": -1}},
+            {"id": "wobbly", "answer": "One leg is a bit wobbly.", "factor": 0.4, "signals": {"condition": -2, "family": -1}}
+          ]
+        },
+        "comfort": {
+          "question": "Is it comfortable to sit in?",
+          "options": [
+            {"id": "cushioned", "answer": "Very, it has a thick cushion.", "factor": 1.2, "signals": {"performance": 1}},
+            {"id": "firm", "answer": "It's firm, fine for meals.", "factor": 0.95, "signals": {}}
+          ]
+        }
+      }
+    },
+    "guitar": {
+      "noun": "guitar",
+      "price": {"low": 30, "typical": 180, "high": 2500},
+      "attributes": {
+        "type": {
+          "question": "Is it acoustic or electric?",
+          "options": [
+            {"id": "acoustic", "answer": "Acoustic.", "factor": 1.0, "signals": {"low_maintenance": 1, "active": 1}},
+            {"id": "electric", "answer": "Electric, needs an amp.", "factor": 1.2, "signals": {"performance": 1, "space": -1}},
+            {"id": "classical", "answer": "Classical, with nylon strings.", "factor": 0.9, "signals": {"family": 1}},
+            {"id": "three_quarter", "answer": "A three-quarter size for kids.", "factor": 0.5, "signals": {"family": 2, "space": 2}}
+          ]
+        },
+        "brand": {
+          "question": "What brand is it?",
+          "options": [
+            {"id": "known", "answer": "A Fender.", "factor": 2.0, "signals": {"status": 2, "performance": 1}},
+            {"id": "generic", "answer": "A beginner brand.", "factor": 0.7, "signals": {"status": -1}}
+          ]
+        },
+        "playability": {
+          "question": "How does it play? Any buzzing?",
+          "options": [
+            {"id": "great", "answer": "Plays great, freshly set up.", "factor": 1.15, "signals": {"performance": 2, "condition": 1}},
+            {"id": "ok", "answer": "Fine, a little fret buzz.", "factor": 0.95, "signals": {"performance": -1}},
+            {"id": "needs_work", "answer": "Needs new strings and a setup.", "factor": 0.8, "signals": {"low_maintenance": -1, "performance": -1}}
+          ]
+        },
+        "condition": {
+          "question": "Any cracks or dents in the body?",
+          "options": [
+            {"id": "clean", "answer": "None, it's spotless.", "factor": 1.15, "signals": {"condition": 2, "style": 1}},
+            {"id": "dings", "answer": "A couple of small dings.", "factor": 0.95, "signals": {"condition": -1}},
+            {"id": "cracked", "answer": "A hairline crack on the top.", "factor": 0.45, "signals": {"condition": -2}}
+          ]
+        },
+        "extras": {
+          "question": "Does it come with a case or anything else?",
+          "options": [
+            {"id": "case", "answer": "Hard case, strap and a tuner.", "factor": 1.15, "signals": {"active": 1, "low_maintenance": 1}},
+            {"id": "nothing", "answer": "Just the guitar.", "factor": 1.0, "signals": {}}
+          ]
+        }
+      }
+    },
+    "umbrella": {
+      "noun": "umbrella",
+      "price": {"low": 2, "typical": 10, "high": 80},
+      "attributes": {
+        "size": {
+          "question": "Is it a compact one or full-size?",
+          "options": [
+            {"id": "compact", "answer": "Compact, fits in a bag.", "factor": 1.0, "signals": {"space": 2, "active": 1}},
+            {"id": "full", "answer": "Full-size.", "factor": 1.1, "signals": {"performance": 1}},
+            {"id": "golf", "answer": "A huge golf umbrella.", "factor": 1.4, "signals": {"performance": 2, "space": -2}}
+          ]
+        },
+        "condition": {
+          "question": "Does it open and close properly?",
+          "options": [
+            {"id": "perfect", "answer": "Works perfectly.", "factor": 1.1, "signals": {"condition": 2}},
+            {"id": "bent_rib", "answer": "One rib is a bit bent.", "factor": 0.5, "signals": {"condition": -2}},
+            {"id": "tear", "answer": "There's a small tear in the canopy.", "factor": 0.3, "signals": {"condition": -2, "performance": -2}}
+          ]
+        },
+        "windproof": {
+          "question": "Does it hold up in the wind?",
+          "options": [
+            {"id": "yes", "answer": "Yes, it's a windproof design.", "factor": 1.4, "signals": {"performance": 2, "active": 1}},
+            {"id": "no", "answer": "It flips in strong wind.", "factor": 0.9, "signals": {"performance": -1}}
+          ]
+        },
+        "auto_open": {
+          "question": "Does it open with a button?",
+          "options": [
+            {"id": "yes", "answer": "Yes, one-button auto open and close.", "factor": 1.25, "signals": {"low_maintenance": 1, "performance": 1}},
+            {"id": "no", "answer": "No, you open it by hand.", "factor": 1.0, "signals": {}}
+          ]
+        }
+      }
+    },
+    "wristwatch": {
+      "noun": "watch",
+      "price": {"low": 5, "typical": 60, "high": 5000},
+      "attributes": {
+        "type": {
+          "question": "What kind of watch is it?",
+          "options": [
+            {"id": "automatic", "answer": "An automatic mechanical watch.", "factor": 2.5, "signals": {"status": 2, "style": 1, "low_maintenance": -1}},
+            {"id": "quartz", "answer": "A quartz watch with a battery.", "factor": 1.0, "signals": {"low_maintenance": 2}},
+            {"id": "smart", "answer": "A smartwatch.", "factor": 2.0, "signals": {"performance": 2, "active": 1}}
+          ]
+        },
+        "brand": {
+          "question": "What brand is it?",
+          "options": [
+            {"id": "luxury", "answer": "An Omega.", "factor": 15.0, "signals": {"status": 2, "style": 2}},
+            {"id": "known", "answer": "A Seiko.", "factor": 2.0, "signals": {"status": 1}},
+            {"id": "generic", "answer": "A no-name brand.", "factor": 0.6, "signals": {"status": -2}}
+          ]
+        },
+        "working": {
+          "question": "Does it keep good time?",
+          "options": [
+            {"id": "yes", "answer": "Keeps perfect time.", "factor": 1.1, "signals": {"performance": 2}},
+            {"id": "slow", "answer": "Loses a minute or two a day.", "factor": 0.7, "signals": {"performance": -1, "low_maintenance": -1}},
+            {"id": "dead", "answer": "It stopped, probably needs a battery.", "factor": 0.4, "signals": {"performance": -2, "condition": -1}}
+          ]
+        },
+        "condition": {
+          "question": "Any scratches on the glass or case?",
+          "options": [
+            {"id": "mint", "answer": "Mint, barely worn.", "factor": 1.2, "signals": {"condition": 2, "style": 1}},
+            {"id": "light", "answer": "Light scratches on the band.", "factor": 0.95, "signals": {"condition": -1}},
+            {"id": "heavy", "answer": "The glass is scratched up.", "factor": 0.6, "signals": {"condition": -2, "style": -1}}
+          ]
+        },
+        "box_papers": {
+          "question": "Do you still have the box and papers?",
+          "options": [
+            {"id": "yes", "answer": "Yes, the original box and papers.", "factor": 1.25, "signals": {"status": 2}},
+            {"id": "no", "answer": "No, just the watch.", "factor": 1.0, "signals": {}}
+          ]
+        }
+      }
+    }
+  }
+}

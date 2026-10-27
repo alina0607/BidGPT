@@ -287,7 +287,7 @@ def test_she_being_is_not_english():
 
 
 def test_human_seller_seeds_add_two_fitting_facts_and_leave_other_seeds_alone():
-    for seed in (2590, 2900, 2100):
+    for seed in (2590, 3000, 2100):
         assert stories.sale_for_seed(seed) == stories.seed_sale(random.Random(seed))
     for seed in stories.HUMAN_SELLER_SEEDS:
         c = stories.sale_for_seed(seed)["cat"]
@@ -332,13 +332,13 @@ def test_no_vet_in_two_years_never_meets_a_recent_vet_fact_on_unwritten_seeds():
 
 def test_no_vet_in_two_years_never_meets_a_cat_under_two_from_2700_on():
     # 2026-10-26, seed 2718: "1 year old" and "no vet visit in two years" on one sheet
-    for seed in range(stories.YOUNG_NO_VET_FROM, 2900):
+    for seed in range(stories.YOUNG_NO_VET_FROM, 3000):
         c = stories.sale_for_seed(seed)["cat"]
-        assert not (c["health"] == stories.NO_VET and c["months"] < 24)
+        assert not (c["health"] == stories.NO_VET and c["months"] <= 24)
     assert stories.sale_for_seed(2718)["cat"]["age"] == "3 years"
     for seed in stories.YOUNG_NO_VET_ALSO:              # the six written before the rule were fixed with their lines
         c = stories.sale_for_seed(seed)["cat"]
-        assert not (c["health"] == stories.NO_VET and c["months"] < 24)
+        assert not (c["health"] == stories.NO_VET and c["months"] <= 24)
 
 
 def test_a_cat_that_never_met_another_cat_never_came_from_a_litter():
@@ -352,7 +352,7 @@ def test_a_cat_that_never_met_another_cat_never_came_from_a_litter():
 
 def test_a_finished_kitten_vaccine_series_never_meets_a_two_month_old_from_2700_on():
     # 2026-10-26, seed 2793: "2 months old" and "finished the kitten vaccine series" (boosters run to 16 to 18 weeks)
-    for seed in [*range(stories.YOUNG_NO_VET_FROM, 2900), *stories.FULL_SERIES_ALSO]:
+    for seed in [*range(stories.YOUNG_NO_VET_FROM, 3000), *stories.FULL_SERIES_ALSO]:
         c = stories.sale_for_seed(seed)["cat"]
         assert not (c["health"] == stories.FULL_SERIES and c["months"] < 4)
     assert stories.sale_for_seed(2793)["cat"]["age"] == "4 months"

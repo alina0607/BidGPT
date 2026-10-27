@@ -22,15 +22,25 @@ from pathlib import Path
 from typing import Any
 
 from . import stories
-from .format import END
-from .sales_sft import CARDS_FILE, TASK_TOKENS, Story, buyer_prompt, card, money
+from .format import END, LINE_FIRST_FORMATS
+from .sales_sft import CARDS_FILE, TASK_TOKENS, Story, animal, buyer_prompt, card, money
 from .schema import DATA_DIR
 
 ML_DIR = DATA_DIR.parent
-CHECKPOINTS = (ML_DIR / "runs" / "sft_b2" / "best.pt", ML_DIR / "runs" / "sft_b1" / "best.pt")    # newest first
+CHECKPOINTS = (ML_DIR / "runs" / "sft_b4f9" / "best.pt", ML_DIR / "runs" / "sft_b3_resume" / "best.pt",
+               ML_DIR / "runs" / "sft_b2" / "best.pt", ML_DIR / "runs" / "sft_b1" / "best.pt")    # newest first
 TYPICAL = 75                               # a typical cat's price in the sales the model learned from
-MAX_NEW = {"open": 48, "ask": 48, "react": 80, "imagine": 64}
+MAX_NEW = {"open": 48, "ask": 48, "react": 80, "imagine": 64, "note": 32}   # note: prompt format 7
+# A line-first scene (format 9) ends with its list, so a cut would lose the list: room for the longest written scene
+# (85 tokens in B4's sales; 126 of 3,740 were longer than 64). Older formats keep 64, so their evaluations do not move.
+LINE_FIRST_IMAGINE = 96
 DOLLARS = re.compile(r"\$\s?(\d+)")
+THING = re.compile(r"<\|thing:([^|]+)\|>")          # a format-6 scene thing token
+
+
+def max_new(task: str, prompt_format: int) -> int:
+    """The most tokens the model may write for a task in a prompt format."""
+    return LINE_FIRST_IMAGINE if task == "imagine" and prompt_format in LINE_FIRST_FORMATS else MAX_NEW[task]
 
 
 class BuyerGPT:
@@ -51,8 +61,8 @@ class BuyerGPT:
         torch.manual_seed(seed)          # same seed, same line: a whole sale can be replayed exactly
         ids = torch.tensor([self.tok.encode(prompt)], device=self.device)
         with torch.no_grad():
-            out = self.model.generate(ids, MAX_NEW[task], temperature=self.temperature, top_k=self.top_k,
-                                      stop_id=self.tok.eos_id)
+            out = self.model.generate(ids, max_new(task, self.prompt_format), temperature=self.temperature,
+                                      top_k=self.top_k, stop_id=self.tok.eos_id)
         # keep only the new tokens (the prompt is echoed back by generate)
         return self.tok.decode(out[0, ids.size(1):].tolist()).replace(END, "").strip()
 
@@ -91,18 +101,26 @@ def _parse_react(parts: list[str]) -> dict[str, Any] | None:
     return None if offer is None else {"sign": parts[0], "says": " | ".join(parts[1:-1]), "offer": offer}
 
 
-def _parse_imagine(parts: list[str]) -> dict[str, Any] | None:
-    """"thing, thing, thing | what they say"."""
-    things = [t.strip() for t in parts[0].split(",") if t.strip()] if len(parts) >= 2 else []
-    return {"things": things, "says": " | ".join(parts[1:])} if things else None
+def _parse_imagine(parts: list[str], line_first: bool = False) -> dict[str, Any] | None:
+    """"thing, thing, thing | what they say", or from format 6 "<|thing:a|><|thing:b|><|thing:c|> | what they say",
+    or in format 9 (line_first) "what they say | thing, thing, thing"."""
+    if len(parts) < 2:
+        return None
+    listed, says = (parts[-1], " | ".join(parts[:-1])) if line_first else (parts[0], " | ".join(parts[1:]))
+    things = THING.findall(listed) or [t.strip() for t in listed.split(",") if t.strip()]
+    return {"things": things, "says": says} if things else None
 
 
-def parse(task: str, text: str) -> dict[str, Any] | None:
+def parse(task: str, text: str, prompt_format: int = 5) -> dict[str, Any] | None:
     """A model line split into its fields, or None when it does not have the trained shape."""
+    if task == "imagine":
+        return _parse_imagine([p.strip() for p in text.split(" | ")], prompt_format in LINE_FIRST_FORMATS)
     if task == "ask":
         return {"says": text} if text else None
+    if task == "note":                          # prompt format 7: the note of an answer, plain text
+        return {"says": text} if text and "|" not in text else None
     parts = [p.strip() for p in text.split(" | ")]
-    return {"open": _parse_open, "react": _parse_react, "imagine": _parse_imagine}[task](parts)
+    return {"open": _parse_open, "react": _parse_react}[task](parts)
 
 
 @dataclass
@@ -151,10 +169,11 @@ class CatMarket:
 
     def _say(self, name: str, task: str, offer: int | None, story: str) -> dict[str, Any] | None:
         """One line from the model for this buyer and task, parsed; None (logged and counted) if it cannot be read."""
-        prompt = buyer_prompt(card(name, self.cards[name], offer, self.gpt.prompt_format), story, TASK_TOKENS[task])
+        prompt = buyer_prompt(card(name, self.cards[name], offer, self.gpt.prompt_format), story, TASK_TOKENS[task],
+                              animal(self.gpt.prompt_format))
         text = self.gpt.say(prompt, task, self.rng.randrange(2**31))
         self.stats["lines"] += 1
-        row = parse(task, text)
+        row = parse(task, text, self.gpt.prompt_format)
         if row is None:
             # no retry and no fallback line: an unreadable line is shown as it is and counted, so a bad model looks bad
             self.stats["unreadable"] += 1

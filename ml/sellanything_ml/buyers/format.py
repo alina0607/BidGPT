@@ -22,8 +22,37 @@ PARSE, SAID = "<|parse|>", "<|said|>"
 # B plan (prompt format 4, buyers/sales_sft.py): the first two spare slots became the opening and the imagined scene.
 # Renaming a spare keeps its id, and no model has been trained on the spares.
 OPEN, IMAGINE = "<|open|>", "<|imagine|>"
-EXTRA_TOKENS = [PARSE, SAID, "<|profile|>", "<|which|>", "<|answer|>", "<|weights|>", OPEN, IMAGINE] + \
-               [f"<|spare{i}|>" for i in range(2, 8)]
+# Prompt format 7 (owner, 2026-10-13): the next spare became the note a buyer writes after each answer. No model was
+# trained on that spare (format 6 grew past it but never used it), so renaming it keeps every id.
+NOTE = "<|note|>"
+# Prompt format 8 (owner, 2026-10-13): the model also plays the honest seller. "<|answer|>" (an old slot no trained
+# model used) is the seller's answer; the next spares became the seller's decision on a final offer, the buyer's
+# reply to a counter-offer, and the seller's card. Renaming keeps every id.
+ANSWER, DECIDE, REPLY, SELLER = "<|answer|>", "<|decide|>", "<|reply|>", "<|seller|>"
+EXTRA_TOKENS = [PARSE, SAID, "<|profile|>", "<|which|>", ANSWER, "<|weights|>", OPEN, IMAGINE, NOTE, DECIDE, REPLY,
+                SELLER] + [f"<|spare{i}|>" for i in range(6, 8)]
+N_BASE_EXTRA = len(EXTRA_TOKENS)       # the added tokens of prompt formats 1-5 and 7; their models grow to these
+TOKEN_FORMATS = (6,)                   # formats that write the animal, persona and scene things as tokens
+NOTE_FORMATS = (7,)                    # formats with a buyer's note of every answer (sales_sft.Story)
+SELLER_FORMATS = (8,)                  # formats where the model also answers and decides as the seller (sales_sft)
+# Prompt format 9 (owner, 2026-10-16; docs/b4f9-line-first-plan.md): as 5, but a scene is written line first,
+# "line | thing, thing, thing", with the things in the order the line names them, so the model writes its list from the
+# line it has just written instead of writing a line that has to keep to a list. The prompt is the same as format 5's.
+LINE_FIRST_FORMATS = (9,)
+
+# Prompt format 6 (owner, 2026-10-12): the kind of animal, the buyer's persona and every thing the drawing GPT can
+# draw get a token of their own, so the model can tie personas to the things they picture and a scene's list is three
+# tokens instead of words. "cat" is the animal, not a thing, and "dog" is there for a later dog market. Each token's
+# embedding starts as the mean of its words' embeddings (MEANINGS, llm/sft.py) and is learned in fine-tuning. They
+# come after the older tokens, so no older id moves.
+from .drawable import DRAWABLE      # noqa: E402  (both only hold lists, so importing them here is safe)
+from .stories import PERSONAS       # noqa: E402
+
+ANIMAL_TOKENS = {a: f"<|{a}|>" for a in ("cat", "dog")}
+BUYER_TOKENS = {p: f"<|buyer:{p}|>" for p in PERSONAS}
+THING_TOKENS = {t: f"<|thing:{t}|>" for t in DRAWABLE if t != "cat"}
+MEANINGS = {token: text for tokens in (ANIMAL_TOKENS, BUYER_TOKENS, THING_TOKENS) for text, token in tokens.items()}
+EXTRA_TOKENS = EXTRA_TOKENS + list(MEANINGS)
 
 
 @dataclass(frozen=True)

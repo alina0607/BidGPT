@@ -28,6 +28,18 @@ def test_parse_reads_the_trained_shapes_and_nothing_else():
                                                                      "offer": 0}
     assert C.parse("react", "+ | Nice.") is None and C.parse("open", "Hello") is None
     assert C.parse("imagine", "dog, sun, bench | text")["things"] == ["dog", "sun", "bench"]
+    assert C.parse("imagine", "<|thing:dog|><|thing:sun|><|thing:alarm clock|> | text")["things"] == \
+        ["dog", "sun", "alarm clock"]                                           # format 6
+
+
+def test_format_9_reads_the_list_after_the_line():
+    assert C.parse("imagine", "My dog | my sun | sun, dog, bench", 9)["says"] == "My dog | my sun"   # list is last
+    assert C.parse("imagine", "Nap in the sun by my dog. | sun, dog, bench", 9) == \
+        {"things": ["sun", "dog", "bench"], "says": "Nap in the sun by my dog."}
+    assert C.parse("imagine", "dog, sun, bench | text", 5) == C.parse("imagine", "dog, sun, bench | text")
+    assert C.parse("imagine", "Nap in the sun.", 9) is None                   # no list at all
+    assert C.max_new("imagine", 9) == C.LINE_FIRST_IMAGINE and C.max_new("imagine", 5) == C.MAX_NEW["imagine"]
+    assert C.max_new("react", 9) == C.MAX_NEW["react"]
 
 
 def test_a_sale_runs_open_ask_react_and_sell():

@@ -7,7 +7,8 @@ saves each line with its checks, so the failures can be counted and read.
 
 `--limit` is the most tokens the model may write (the game and the evaluation allow MAX_NEW["imagine"] = 64), to
 see whether longer scenes are being cut off. `--forced` starts the scene with the three things the written sale
-picked ("a, b, c |"), so the model only writes the line: picking things and writing about them can be told apart.
+picked ("a, b, c |", or three thing tokens in prompt format 6), so the model only writes the line: picking things and
+writing about them can be told apart. `--sets runs/eval_sets_b2f6` reads the same prompts in format 6.
 
 The CPU is used so that the run can share the Mac with a GPU job. Random numbers differ between the CPU and MPS, so
 these lines are not the same samples as the evaluation's; compare runs of this tool with each other.
@@ -25,7 +26,13 @@ sys.path[:0] = [str(ML), str(ML / "tools")]
 SETS = ("old", "new")
 
 
+def scene_list(target: str) -> str:
+    """The written scene's list with its bar, "a, b, c |" (format 5) or "<|thing:a|><|thing:b|><|thing:c|> |" (6)."""
+    return target[:target.index(" | ") + 2]
+
+
 def main() -> None:
+    """Write every imagine prompt of the two sets and save each scene with its checks."""
     import torch
 
     import eval_buyer_b1 as E
@@ -35,17 +42,19 @@ def main() -> None:
     ap.add_argument("checkpoint", type=Path)
     ap.add_argument("--limit", type=int, default=64, help="most tokens the model may write")
     ap.add_argument("--forced", action="store_true", help="start with the written sale's three things")
+    ap.add_argument("--sets", type=Path, default=ML / "runs/eval_sets_b2", help="folder of val_{old,new}_format*.jsonl")
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args()
     torch.set_num_threads(4)
     model, tok = load_model(a.checkpoint, torch.device("cpu"))
     rows = []
     for which in SETS:
-        examples = [json.loads(line) for line in open(ML / f"runs/eval_sets_b2/val_{which}_format5.jsonl")]
+        [path] = a.sets.glob(f"val_{which}_format*.jsonl")
+        examples = [json.loads(line) for line in path.read_text().splitlines()]
         for i, ex in enumerate(examples):
             if ex["task"] != "imagine":
                 continue
-            prefix = ex["target"].split("|")[0] + "|" if a.forced else ""
+            prefix = scene_list(ex["target"]) if a.forced else ""
             torch.manual_seed(i)
             ids = torch.tensor([tok.encode(ex["prompt"] + prefix)])
             with torch.no_grad():

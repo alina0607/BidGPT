@@ -22,8 +22,9 @@ from typing import Any
 import torch
 
 from ..buyers.datagen import BUYERS_DIR, is_current, prompt_format_of
+from ..buyers.format import MEANINGS, N_BASE_EXTRA, TOKEN_FORMATS
 from . import evaluate as ev
-from .model import GPT, GPTConfig, grow_vocab
+from .model import GPT, GPTConfig, grow_vocab, start_rows_from_words
 from .pretrain import make_optimizer, pick_device
 from .tokenizer import ML_DIR, TOKENIZER_DIR, Tokenizer
 
@@ -98,7 +99,7 @@ def val_loss(model: GPT, data: list[Encoded], pad_id: int, device: torch.device,
     losses = []
     for _ in range(n_batches):
         x, y, m = collate(rng.sample(data, batch), pad_id, device, per_example=False)
-        losses.append(model(x, y, m)[1].item())
+        losses.append(model(x, y, m, masked_only=True)[1].item())
     model.train()
     return sum(losses) / len(losses)
 
@@ -109,6 +110,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--init", type=Path, required=True, help="pre-trained checkpoint")
     parser.add_argument("--epochs", type=float, default=2)
     parser.add_argument("--batch", type=int, default=32)
+    parser.add_argument("--accum", type=int, default=1,
+                        help="split each batch into this many parts (same gradient as --batch, less memory)")
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--max-len", type=int, default=768)
     parser.add_argument("--eval-every", type=int, default=500)
@@ -147,9 +150,16 @@ def load_init(init: Path, device: torch.device, prompt_format: int,
     model.load_state_dict(state["model"])
     tok = Tokenizer(TOKENIZER_DIR / f"{state['tokenizer']}.model")
     uses_extra = "parse" in tasks or prompt_format >= 4
-    if uses_extra and model.cfg.vocab_size < tok.vocab_size:
-        model = grow_vocab(model, tok.vocab_size)
-        print(f"vocabulary grown to {model.cfg.vocab_size} for {tok.vocab_size - tok.sp_size} added tokens", flush=True)
+    # formats 1-5 grow to the older added tokens only, so their runs stay as they were; format 6 adds a token for the
+    # animal, each persona and each drawable thing (buyers/format.py), started from the embeddings of their words
+    size = tok.vocab_size if prompt_format in TOKEN_FORMATS else tok.sp_size + N_BASE_EXTRA
+    if uses_extra and model.cfg.vocab_size < size:
+        old = model.cfg.vocab_size
+        model = grow_vocab(model, size)
+        if prompt_format in TOKEN_FORMATS:
+            start_rows_from_words(model, {tok.extra[t]: tok.encode(" " + text) for t, text in MEANINGS.items()
+                                          if old <= tok.extra[t] < size})
+        print(f"vocabulary grown to {model.cfg.vocab_size} for {size - tok.sp_size} added tokens", flush=True)
     return model, tok, state
 
 
@@ -251,10 +261,18 @@ class _Run:
         """One optimizer step at learning rate lr; returns the batch loss."""
         for g in optimizer.param_groups:
             g["lr"] = lr
-        x, y, m = collate(batch, self.tok.pad_id, self.device, per_example=self.args.loss == "per-example")
-        with _autocast(self.args.dtype, self.device):
-            loss = self.model(x, y, m)[1]
-        loss.backward()
+        # --accum k: the batch in k parts, one backward each. Every part's mean loss is scaled by its share of the
+        # batch's loss weight, so the summed gradient is the gradient of the whole batch's mean loss.
+        n = math.ceil(len(batch) / self.args.accum)
+        parts = [collate(batch[i:i + n], self.tok.pad_id, self.device, per_example=self.args.loss == "per-example")
+                 for i in range(0, len(batch), n)]
+        total = sum(m.sum() for _, _, m in parts)
+        loss = torch.zeros((), device=self.device)
+        for x, y, m in parts:
+            with _autocast(self.args.dtype, self.device):
+                part = self.model(x, y, m, masked_only=True)[1] * (m.sum() / total)  # output layer only where loss counts
+            part.backward()
+            loss += part.detach()
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), GRAD_CLIP)
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)

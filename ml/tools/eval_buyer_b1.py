@@ -1,4 +1,4 @@
-"""Held-out evaluation of the buyer GPT (B plan, prompt formats 4 and 5) on the validation sales.
+"""Held-out evaluation of the buyer GPT (B plan, prompt formats 4 to 7) on the validation sales.
 
     PYTHONPATH=. python tools/eval_buyer_b1.py runs/sft_b2/best.pt --out runs/sft_b2/eval.json
     PYTHONPATH=. python tools/eval_buyer_b1.py runs/sft_b1/best.pt --data data/processed/buyers_b1/val.jsonl --out …
@@ -12,7 +12,8 @@ content words were in one earlier question (a rough measure of "the same meaning
 The model completes every validation prompt the way the game samples (temperature 0.7, top-k 50, a fixed seed per
 prompt) and each line is checked by the same program rules the training sales passed, against the buyer's card in
 the prompt; no other model judges. Also how often the model moves its offer the same way the sale's buyer did.
-A readable copy of some examples goes next to the report (`*_samples.md`).
+A readable copy of some examples goes next to the report (`*_samples.md`); `--outputs` also keeps every line the
+model wrote with its checks (one JSON object per example), for measurements on the outputs (tools/measure_outputs.py).
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from sellanything_ml.buyers import stories
-from sellanything_ml.buyers.cat_market import MAX_NEW, parse
+from sellanything_ml.buyers.cat_market import max_new, parse
 from sellanything_ml.buyers.format import END
 from sellanything_ml.buyers.sales_sft import OUT_DIR
 
@@ -34,8 +35,11 @@ OFFER_NOW = re.compile(r"offer now \$(\d+)")
 OPENING = re.compile(r"Your opening \(\$(\d+)\)")
 TEMPERATURE, TOP_K = 0.7, 50                       # as the game samples (cat_market.BuyerGPT)
 MAX_MOVE, MAX_PEAK, SAME_QUESTION = 0.40, 1.6, 0.5
-TASKS = ("open", "ask", "react", "imagine")
-RATES = ("spoken_ok", "new_question", "new_in_meaning", "rules_ok", "same_direction", "said_equals_offer", "reasonable")
+TASKS = ("open", "ask", "react", "imagine", "note")
+RATES = ("spoken_ok", "new_question", "new_in_meaning", "rules_ok", "same_direction", "said_equals_offer", "reasonable",
+         "keeps_negation", "faithful")
+NEGATION = re.compile(r"\b(no|not|never|none|unknown|n't)\b", re.I)
+FAITHFUL = 0.5                                     # a note keeps at least half of the written note's content words
 SAMPLES_PER_TASK = 12
 
 
@@ -71,10 +75,10 @@ def _react_checks(row: dict[str, Any], ex: dict[str, Any], c: dict[str, Any]) ->
                                          and offer <= MAX_PEAK * (c["opening"] or held))}
 
 
-def check(ex: dict[str, Any], out: str) -> dict[str, Any]:
+def check(ex: dict[str, Any], out: str, prompt_format: int = 5) -> dict[str, Any]:
     """One completion's checks: readable, the task's rules, and for reactions the direction against the sale's."""
     task, c = ex["task"], context(ex)
-    row = parse(task, out)
+    row = parse(task, out, prompt_format)
     res: dict[str, Any] = {"readable": row is not None}
     if row is None:
         return res
@@ -89,6 +93,12 @@ def check(ex: dict[str, Any], out: str) -> dict[str, Any]:
     elif task == "imagine":
         problem = stories.imagine_problem(row)
         res["rules_ok"], res["problem"] = problem is None, problem
+        res["kinds"] = sorted(stories.imagine_kinds(row))       # every rule it breaks, not only the first
+    elif task == "note":                        # prompt format 7: the note against the written one
+        want = ex["target"].replace(END, "")
+        res["keeps_negation"] = not NEGATION.search(want) or bool(NEGATION.search(row["says"]))
+        words = stories._words(want)
+        res["faithful"] = not words or len(words & stories._words(row["says"])) >= FAITHFUL * len(words)
     return res
 
 
@@ -117,6 +127,8 @@ def summary(results: list[dict[str, Any]], examples: list[dict[str, Any]]) -> di
             s |= _react_summary([r for r in rows if r["readable"]])
         if task == "imagine":
             s["problems"] = dict(Counter(r["problem"] for r in rows if r.get("problem")).most_common(5))
+            kinds = Counter(k for r in rows for k in r.get("kinds", []))    # a scene may break several rules
+            s["kinds"] = {k: kinds[k] for k in stories.IMAGINE_KINDS}
         out[task] = s
     return out
 
@@ -159,25 +171,35 @@ def main() -> None:
     ap.add_argument("--data", type=Path, default=OUT_DIR / "val.jsonl")
     ap.add_argument("--n", type=int, default=0, help="at most this many examples per task (0 = all)")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--outputs", type=Path, help="also write every example's output and checks here (.jsonl)")
+    ap.add_argument("--device", help="cpu, mps or cuda (default: the fastest one here)")
+    ap.add_argument("--seed-offset", type=int, default=0,
+                    help="added to every prompt's seed: the same prompts sampled again, to measure sampling noise")
     a = ap.parse_args()
-    device = pick_device()
+    device = a.device or pick_device()
     model, tok = load_model(a.checkpoint, device)
     examples = [json.loads(line) for line in a.data.read_text().splitlines()]
     if a.n:
         examples = first_n(examples, a.n)
     outputs = []
     for i, ex in enumerate(examples):
-        torch.manual_seed(i)                                    # a fixed seed per prompt: the run can be repeated
+        torch.manual_seed(i + a.seed_offset)                    # a fixed seed per prompt: the run can be repeated
         ids = torch.tensor([tok.encode(ex["prompt"])], device=device)
         with torch.no_grad():
-            gen = model.generate(ids, MAX_NEW[ex["task"]], temperature=TEMPERATURE, top_k=TOP_K, stop_id=tok.eos_id)
+            gen = model.generate(ids, max_new(ex["task"], model.prompt_format), temperature=TEMPERATURE, top_k=TOP_K,
+                                 stop_id=tok.eos_id)
         outputs.append(tok.decode(gen[0, ids.size(1):].tolist()).replace(END, "").strip())
-    results = [check(ex, out) for ex, out in zip(examples, outputs, strict=True)]
-    report = {"checkpoint": str(a.checkpoint), "examples": len(examples), "sales": len({e["seed"] for e in examples}),
-              "tasks": summary(results, examples)}
+    results = [check(ex, out, model.prompt_format) for ex, out in zip(examples, outputs, strict=True)]
+    report = {"checkpoint": str(a.checkpoint), "seed_offset": a.seed_offset, "examples": len(examples),
+              "sales": len({e["seed"] for e in examples}), "tasks": summary(results, examples)}
     a.out.write_text(json.dumps(report, indent=1))
     print(json.dumps(report, indent=1))
     a.out.with_name(a.out.stem + "_samples.md").write_text(samples_md(examples, outputs, results))
+    if a.outputs:
+        a.outputs.write_text("".join(json.dumps({"index": i, "task": e["task"], "seed": e["seed"], "name": e["name"],
+                                                 "target": e["target"].replace(END, "").strip(), "output": o,
+                                                 "checks": r}) + "\n"
+                                     for i, (e, o, r) in enumerate(zip(examples, outputs, results, strict=True))))
 
 
 if __name__ == "__main__":
