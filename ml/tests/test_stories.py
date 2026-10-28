@@ -356,3 +356,12 @@ def test_a_finished_kitten_vaccine_series_never_meets_a_two_month_old_from_2700_
         c = stories.sale_for_seed(seed)["cat"]
         assert not (c["health"] == stories.FULL_SERIES and c["months"] < 4)
     assert stories.sale_for_seed(2793)["cat"]["age"] == "4 months"
+
+
+def test_a_cat_without_a_vet_visit_was_never_treated_for_fleas_last_month():
+    # 2026-10-27, seed 2973: "no vet visit in two years" and "treated for fleas and ear mites last month" on one sheet
+    for seed in stories.LIFE_SEEDS:
+        c = stories.sale_for_seed(seed)["cat"]
+        assert not (stories.TREATED in c.get("life", []) and c["health"] == stories.NO_VET)
+    assert "has never had a flea treatment" in stories.sale_for_seed(2973)["cat"]["life"]
+    assert stories.TREATED in stories.sale_for_seed(2611)["cat"]["life"]     # saw a vet: unchanged

@@ -226,6 +226,10 @@ UNSET_COAT = ("a mixed-breed tabby", "a calico", "an orange tabby of unknown bre
 # A kitten from a litter has met its mother and littermates, so it cannot have "never met another cat" (found
 # 2026-10-26 on seed 2762); such a cat was found as a stray kitten instead. Five written sales were fixed with their lines.
 LITTER = "came from a neighbour's unplanned litter"
+# Fleas and ear mites are treated with products from the vet, so a cat with "no vet visit in two years" cannot have
+# been "treated for fleas and ear mites last month" (found 2026-10-27 on seed 2973); such a cat has never had a flea
+# treatment instead (owner, 2026-10-28). Four written sales were fixed with their lines.
+TREATED = "treated for fleas and ear mites last month"
 LIFE_WEIGHTS = {"origin": 3, "food": 2, "litter": 2, "handling": 1, "pests": 1, "microchip": 0.5, "coat": 1}
 
 
@@ -260,6 +264,8 @@ def add_life_facts(seed: int, c: dict[str, Any]) -> None:
         c.setdefault("life", []).append(rng.choice(_life_options(kind, c)))
     if LITTER in c["life"] and "has never met another cat" in c["company"]:
         c["life"][c["life"].index(LITTER)] = "found as a stray kitten"     # after the draw, so no other fact moves
+    if TREATED in c["life"] and c["health"] == NO_VET:
+        c["life"][c["life"].index(TREATED)] = "has never had a flea treatment"
 
 
 def facts(s: Sale) -> str:
