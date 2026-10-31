@@ -12,6 +12,12 @@ life-facts section (what real adopters ask: origin, being picked up, food, fleas
 in prompts already written in the folder without touching their other text:
     PYTHONPATH=. python tools/external_prompt.py 2593 2649 ../data/written_sales/prompts_2560_2649 --append-life
 
+The small-words batch (data/written_sales/prompts_3000_plan.md, seeds stories.PAIRED_SEEDS) adds, per seed, which
+answers use which small word, a control and a "but" answer (cue_plan.json, checked by the folder's check_cues.py),
+and writes the folder's checker copies as prompts_2900_2999 has them:
+    PYTHONPATH=. python tools/external_prompt.py 3000 3049 ../data/written_sales/prompts_3000_3049 --quotas \
+        --quota-target 50 --cues --checkers-from ../data/written_sales/prompts_2900_2999
+
 Each prompt holds that seed's cat, seller style and ten buyers (stories.seed_sale), the general cat facts for the
 topics they touch, every rule the training sales are held to, and the output format tools/write_sales.py reads. The
 answer for seed N is saved as <specs_dir>/N.json and checked with `python tools/write_sales.py <specs_dir> <out>`.
@@ -22,6 +28,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -375,26 +382,466 @@ def append_life(folder: Path, first: int, last: int) -> None:
     print(f"life facts for {len(facts)} prompts in {folder}")
 
 
+# The small words (data/written_sales/prompts_3000_plan.md, approved by the owner 2026-10-29; seeds stories.PAIRED_SEEDS):
+# every paired seed's prompt says which target answers to give with which small word, one control answer (a negation
+# that does not turn the direction), one answer joining a good and a bad fact with "but" or "though", and the held-out
+# words no line may use. cue_plan.json keeps all of it for check_cues.py.
+HELD_OUT_WORDS = ("barely", "hardly", "ain't", "no longer", "rarely", "seldom", "even though", "there's no denying")
+HELD_OUT_PATTERN = r"\b(barely|hardly|rarely|seldom|no longer|even though)\b|\bain'?t\b|\bthere'?s no denying\b"
+CUE_FAMILIES = {   # family: (the words of it check_cues.py looks for, how the prompt names it)
+    "nt": (r"n't\b|\b(dont|doesnt|isnt|hasnt|wont|cant|didnt|wasnt|havent|couldnt|wouldnt|arent)\b",
+           "n't (doesn't, isn't, hasn't, can't, won't; typed as doesnt or isnt is fine)"),
+    "not": (r"\bnot\b", "not (or not yet)"),
+    "no": (r"\b(no|none|nothing)\b", "no, none or nothing"),
+    "never": (r"\bnever\b", "never"),
+    "without": (r"\bwithout\b", "without"),
+    "little": (r"\b(very little|not much|only a little|little)\b", "very little, not much or only a little"),
+    "frag": (r"^\W*(not really|nope|nah|no idea|dunno|idk|not sure|no\b)",
+             "a player's fragment at the very start (Not really, Nope, Nah, No idea, Dunno), then the fact"),
+    "intact": (r"\b(intact|entire)\b", "the word intact"), "entire": (r"\b(entire|intact)\b", "the word entire"),
+    "positive": (r"\bpositive\b", "the word positive"), "negative": (r"\bnegative\b", "the word negative"),
+    "months": (r"\b(months?|mos?|mths?)\b", "the number 2 and the word months"),
+    "years": (r"\b(years?|yrs?)\b", "the number 2 and the word years"),
+    "fussy": (r"\b(fussy|picky)\b", "the word fussy (or picky)"), "any brand": (r"\bany\b", "the words any brand"),
+    "plain": ("", "no small word: say the fact plainly"),
+}
+FORMS = {"full": "a full sentence", "fragment": "a player's fragment",
+         "typed": "typed the way this seller types (lowercase, short forms)"}
+NEGATION_FAMILIES = ("nt", "not", "no", "never", "without", "little", "frag")
+CUE_OPTIONS = {   # the families the targets of one value take in turn, by seed (plan 3.2 shares, 4.3 balance)
+    "sheds a lot": ("plain", "never", "nt", "no", "plain"), "sheds very little": ("nt", "little", "frag", "little", "little"),
+    ("shed", "U"): ("nt", "frag"),
+    "spayed/neutered": ("plain", "nt", "no", "plain"),
+    "not yet spayed/neutered": ("intact", "not", "entire", "frag", "intact", "nt", "entire", "intact"),
+    "2 months": ("months",), "2 years": ("years",),
+    "fully vaccinated, vet check last month": ("plain", "no"), "finished the kitten vaccine series": ("nt",),
+    "no vaccination records": ("no", "without"), "no vaccines yet": ("not",),
+    "recovering from a cold": ("not",), "has some stiff joints": ("frag",),
+    "tested negative for FIV and FeLV": ("negative", "no", "negative"), "tested FIV positive": ("positive",),
+    "never tested for FIV or FeLV": ("never", "nt"),
+    "is fine with children": ("plain", "nt", "no"), "doesn't like children": ("nt", "not", "frag"),
+    "has never met children": ("never", "without"),
+    "has lived with a dog": ("not", "plain", "nt"), "doesn't get on with dogs": ("nt", "frag", "not"),
+    "has never met a dog": ("frag", "never"),
+    "has lived with another cat": ("not", "nt"), "doesn't get on with other cats": ("nt", "not"),
+    "has never met another cat": ("never", "frag"),
+    "independent": ("little", "not", "nt"), "very cuddly": ("plain", "nt"), "follows people around like a dog": ("never",),
+    "uses a scratching post, never the sofa": ("never", "not", "nt"),
+    "a bit feisty, scratches when annoyed": ("plain", "nt", "plain"),
+    "indoor-only": ("never", "nt", "not"), "indoor-outdoor": ("plain", "nt"), "used to roaming a farm": ("plain",),
+    "playful and noisy at night": ("not", "plain"), "meows loudly for breakfast": ("no", "never"),
+    "bloodwork last month was normal": ("no", "no"),
+    "bloodwork shows early kidney disease, on a kidney diet": ("plain",), "no bloodwork in years": ("nt",),
+    "no papers": ("never", "without"), ("papers", "U"): ("nt", "frag"),
+    "eats wet food twice a day, any brand": ("any brand", "not"),
+    "a fussy eater, only eats chicken wet food": ("fussy",), "eats one brand of dry food and nothing else": ("no",),
+    "treated for fleas and ear mites last month": ("no",), "on a monthly flea treatment": ("without",),
+    "has never had a flea treatment": ("never", "nt"),
+    "fully litter trained": ("plain", "no"), "still learning to use the litter box": ("not",),
+    "litter trained but kicks litter everywhere": ("plain",),
+    "loves being picked up and carried": ("nt", "nt"), "hates being picked up but sits close by": ("not", "plain"),
+    "microchipped": ("plain", "no"), "not microchipped": ("not", "frag"),
+    "found as a stray and never claimed": ("never", "never"),
+}
+GOOD_NEWS = {   # (topic, side): good for most buyers ("+"), bad ("-"), or neither (plan 4.3 counts + and -)
+    ("shed", "A"): "-", ("shed", "B"): "+", ("spay", "A"): "+", ("spay", "B"): "-", ("vacc", "A"): "+",
+    ("vacc", "B"): "-", ("fiv", "A"): "+", ("fiv", "B"): "-", ("kids", "A"): "+", ("kids", "B"): "-",
+    ("dogs", "A"): "+", ("dogs", "B"): "-", ("cats", "A"): "+", ("cats", "B"): "-", ("scratch", "A"): "+",
+    ("scratch", "B"): "-", ("noise", "B"): "-", ("senior", "A"): "+", ("senior", "B"): "-", ("papers", "B"): "-",
+    ("food", "A"): "+", ("food", "B"): "-", ("pests", "A"): "+", ("pests", "B"): "-", ("litter", "A"): "+",
+    ("litter", "B"): "-", ("handling", "A"): "+", ("handling", "B"): "-", ("microchip", "A"): "+",
+    ("microchip", "B"): "-",
+}
+TOPIC_WORDS = {   # how check_cues.py finds the answer about a topic
+    "shed": r"shed|fur\b|hair", "spay": r"spay|neuter|fix|intact|entire|\bop\b|operation|snip",
+    "age": r"month|\bmos?\b|year|\byrs?\b|\bold\b|\bage\b", "vacc": r"shot|vacc|jab|booster",
+    "fiv": r"fiv|felv|test", "kids": r"kid|child", "dogs": r"dog", "cats": r"\bcats?\b|kitt|feline",
+    "clingy": r"independent|cuddl|follow|clingy|company|alone|lap\b|side\b|own thing|attention",
+    "scratch": r"scratch|sofa|couch|post\b|claw", "home": r"indoor|inside|outside|outdoor|\bout\b|roam|farm|garden",
+    "noise": r"meow|noisy|noise|loud|night|breakfast|yell|quiet|sleep", "senior": r"blood|kidney|test",
+    "papers": r"paper|pedigree|registered|purebred|pure breed", "food": r"\beat|food|chicken|brand|wet|dry|fussy|picky",
+    "pests": r"flea|mite", "litter": r"litter|box", "handling": r"pick|held|hold|carr|lap\b",
+    "microchip": r"chip", "origin": r"stray|found|claim",
+}
+SIDE_WORDS = {   # (topic, side): words the answer must have to be on that side, and words it must not have
+    ("shed", "A"): (r"a lot|lots|loads|tons|everywhere|heaps|constant|non ?stop|stops?\b|end to|plenty|so much",
+                    r"\bvery little\b|\bnot much\b|n't shed much|\blittle\b"),
+    ("shed", "B"): (r"little|much|\bbit\b|\bno (real )?(shed|fur)|n't shed\b|\bnot shed", r"a lot|loads|tons|everywhere"),
+    ("shed", "U"): (r"know|sure|idea|tell|dunno|idk|\bsay\b", None),
+    ("spay", "A"): (r"spay|neuter|fixed|done", r"\b(not yet|intact|entire|nope|nah)\b|n't (been )?(spay|neuter|fix|done)"),
+    ("spay", "B"): (r"\b(not|yet|intact|entire|nope|nah|no)\b|n't", None),
+    ("age", "A"): (r"\b(2|two)\b", r"\b(years?|yrs?)\b"), ("age", "B"): (r"\b(2|two)\b", r"\b(months?|mos?)\b"),
+    ("vacc", "A"): (r"done|all|finished|full|up to date|every|complete|no more|n't need",
+                    r"no (shots|vacc|records|jabs)|not (vaccinated|had)|never (had|been)|hasn't had"),
+    ("vacc", "B"): (r"\b(no|none|not|never|without)\b|n't", None),
+    ("vacc", "U"): (r"know|sure|idea|dunno|idk|\bsay\b|tell", None),
+    ("fiv", "A"): (r"negative|\bno fiv|n't have|free", r"\bpositive\b"), ("fiv", "B"): (r"positive", r"\bnegative\b"),
+    ("fiv", "U"): (r"never|not tested|n't been tested|untested|no test", r"\b(positive|negative)\b"),
+    ("kids", "A"): (r"fine|great|good|love|mind|trouble|problem|ok", r"n't like|not good|aren't her|never met"),
+    ("kids", "B"): (r"n't like|not good|n't get on|n't her|not a fan|not (her|his) thing|n't (his|her) thing|dislike|hate",
+                    None),
+    ("kids", "U"): (r"never|n't met|without|not been around|n't been around", None),
+    ("dogs", "A"): (r"lived|fine|used to|not new|mind", r"n't get on|never met"),
+    ("dogs", "B"): (r"n't get on|not good|n't (his|her) thing|not (his|her) thing|aren't for|n't like|n't do", None),
+    ("dogs", "U"): (r"never|n't met", None),
+    ("cats", "A"): (r"lived|fine|used to|not new|mind", r"n't get on|never met"),
+    ("cats", "B"): (r"n't get on|not good|n't (his|her) thing|not (his|her) thing|n't like|n't do", None),
+    ("cats", "U"): (r"never|n't met", None),
+    ("clingy", "A"): (r"independent|own thing|not clingy|n't need|on (her|his) own", None),
+    ("clingy", "B"): (r"cuddl|follow|clingy|side|lap|n't get enough|never leaves", None),
+    ("scratch", "A"): (r"post", None), ("scratch", "B"): (r"scratch|feisty|annoy", r"\bpost\b"),
+    ("home", "A"): (r"indoor|inside|never goes out|n't go out|not an outdoor", r"out all day|roam"),
+    ("home", "B"): (r"outdoor|outside|out\b|roam|farm", r"never goes out|n't go out|indoor only|indoor-only"),
+    ("noise", "B"): (r"meow|noisy|noise|loud|yell|quiet|night|breakfast", None),
+    ("senior", "A"): (r"normal|fine|nothing wrong|no problem|clear|good", r"kidney"),
+    ("senior", "B"): (r"kidney|no bloodwork|n't had|not (been )?tested|years", r"\bnormal\b"),
+    ("papers", "B"): (r"paper", None), ("papers", "U"): (r"know|sure|idea|dunno|idk|\bsay\b", None),
+    ("food", "A"): (r"any|not fussy|n't fussy|n't picky|whatever", r"only|nothing else"),
+    ("food", "B"): (r"only|fussy|picky|nothing else|one brand|just", None),
+    ("pests", "A"): (r"treat|dose|monthly|last month|drops", r"never had|no flea treatment"),
+    ("pests", "B"): (r"never|no\b|n't had|n't been|not been", None),
+    ("litter", "A"): (r"trained|no training|uses", r"learning|kick"), ("litter", "B"): (r"learning|kick|not fully|n't", None),
+    ("handling", "A"): (r"love|n't mind|happy|enjoy", r"hate|n't like"),
+    ("handling", "B"): (r"hate|n't like|not a fan|won't|n't want", None),
+    ("microchip", "A"): (r"chip", r"\bnot\b|\bno chip|n't|nope"), ("microchip", "B"): (r"\bnot\b|\bno\b|n't|nope", None),
+    ("origin", "C"): (r"stray", None),
+}
+TAKE = {   # (topic, side): how the buyers the target turns take it (plan 3.1, last column)
+    ("shed", "A"): "the allergic buyer, and any buyer whose card minds shedding, lowers; everyone else keeps",
+    ("shed", "B"): "the allergic buyer, and any buyer whose card minds shedding, raises; everyone else keeps",
+    ("shed", "U"): "nobody moves: the allergic buyer keeps and says they will spend time with this cat first to see",
+    ("spay", "A"): "a breeder withdraws (she cannot be bred); everyone else keeps",
+    ("spay", "B"): "a breeder raises; everyone else lowers once for the spay or neuter bill; an allergic buyer hearing a "
+                   "kitten under puberty keeps (it can be done before then)",
+    ("age", "A"): "only a buyer whose card asks about age itself moves (a kitten to raise: raise; a settled grown cat: "
+                  "lower); others keep. A kitten's buyers name kitten things only when the sheet says them "
+                  "(shots still to finish, a spay still to do)",
+    ("age", "B"): "only a buyer whose card asks about age itself moves (a settled grown cat: raise; a kitten to raise: "
+                  "lower); others keep. Only now may a buyer speak of a young adult or a yearly checkup",
+    ("vacc", "A"): "the buyer who wants things in excellent shape raises; everyone else keeps",
+    ("vacc", "B"): "every buyer lowers once for the shots (a bill)",
+    ("vacc", "U"): "nobody moves: each buyer keeps and says how they will find out (the vet's records, a vet check)",
+    ("fiv", "A"): "the buyer with an older cat at home raises; everyone else keeps (an adult)",
+    ("fiv", "B"): "the buyer with an older cat at home lowers (or the seller refuses that buyer); everyone else lowers "
+                  "once for the vet care",
+    ("fiv", "U"): "the buyer with an older cat at home lowers once (a test is needed first); everyone else keeps",
+    ("kids", "A"): "the buyer with young kids raises; everyone else keeps",
+    ("kids", "B"): "the buyer with young kids lowers or withdraws; everyone else keeps",
+    ("kids", "U"): "the buyer with young kids lowers once (their card is about this); everyone else keeps",
+    ("dogs", "A"): "the buyer with two dogs raises; everyone else keeps",
+    ("dogs", "B"): "the buyer with two dogs lowers or withdraws; everyone else keeps",
+    ("dogs", "U"): "the buyer with two dogs lowers once (their card is about this); everyone else keeps",
+    ("cats", "A"): "the buyer with an older cat at home raises; everyone else keeps",
+    ("cats", "B"): "the buyer with an older cat at home lowers or withdraws; everyone else keeps",
+    ("cats", "U"): "the buyer with an older cat at home lowers once (their card is about this); everyone else keeps",
+    ("clingy", "A"): "the buyer who works long hours raises; a buyer whose card wants a lap cat keeps",
+    ("clingy", "B"): "the buyer who works long hours lowers; a buyer whose card wants a lap cat raises",
+    ("scratch", "A"): "the buyer who cares how things look raises; everyone else keeps",
+    ("scratch", "B"): "the buyer with young kids lowers; everyone else keeps",
+    ("home", "A"): "the buyer on a busy road (and one in a small flat) raises; the hiker lowers",
+    ("home", "B"): "the buyer on a busy road (and one in a small flat) lowers; the hiker raises",
+    ("noise", "B"): "every buyer who sleeps at night lowers once (lost sleep); the night shift nurse keeps",
+    ("senior", "A"): "most buyers keep",
+    ("senior", "B"): "every buyer lowers once (the vet bills or the tests it needs)",
+    ("papers", "B"): "a breeder withdraws (no registration); a buyer who prizes pedigree lowers once; everyone else keeps",
+    ("papers", "U"): "nobody moves: each buyer keeps and says how they will find out (ask for the breeder's papers)",
+}
+FLIP_SIGNS = {   # (topic, side): {persona: the sign plan 3.1 asks for}; check_cues.py lists the other signs to read
+    ("shed", "A"): {"is allergic and worried about fur": "-"}, ("shed", "B"): {"is allergic and worried about fur": "+"},
+    ("shed", "U"): {"is allergic and worried about fur": "0"},
+    ("spay", "A"): {"breeds show cats": "out"}, ("spay", "B"): {"breeds show cats": "+"},
+    ("vacc", "A"): {"wants things in excellent shape": "+"}, ("vacc", "B"): {"wants things in excellent shape": "-"},
+    ("vacc", "U"): {"wants things in excellent shape": "0"},
+    ("fiv", "A"): {"already has an older cat at home": "+"}, ("fiv", "B"): {"already has an older cat at home": "-"},
+    ("fiv", "U"): {"already has an older cat at home": "-"},
+    ("kids", "A"): {"is buying for a family with young kids": "+"},
+    ("kids", "B"): {"is buying for a family with young kids": "-"},
+    ("kids", "U"): {"is buying for a family with young kids": "-"},
+    ("dogs", "A"): {"already has two dogs": "+"}, ("dogs", "B"): {"already has two dogs": "-"},
+    ("dogs", "U"): {"already has two dogs": "-"},
+    ("cats", "A"): {"already has an older cat at home": "+"}, ("cats", "B"): {"already has an older cat at home": "-"},
+    ("cats", "U"): {"already has an older cat at home": "-"},
+    ("clingy", "A"): {"works long hours and has little free time": "+"},
+    ("clingy", "B"): {"works long hours and has little free time": "-"},
+    ("scratch", "A"): {"cares a lot about how things look": "+"},
+    ("scratch", "B"): {"is buying for a family with young kids": "-"},
+    ("home", "A"): {"lives on a busy road": "+", "spends weekends hiking and wants an adventure cat": "-"},
+    ("home", "B"): {"lives on a busy road": "-", "spends weekends hiking and wants an adventure cat": "+"},
+    ("noise", "B"): {"is a nurse working night shifts": "0"},
+    ("papers", "B"): {"breeds show cats": "out", "loves rare, premium and pedigree things": "-"},
+    ("papers", "U"): {"breeds show cats": "0", "loves rare, premium and pedigree things": "0"},
+    ("pests", "A"): {"already has two dogs": "+"}, ("pests", "B"): {"already has two dogs": "-"},
+    ("handling", "A"): {"is buying for a family with young kids": "+"},
+    ("handling", "B"): {"is buying for a family with young kids": "-"},
+    ("microchip", "A"): {"lives on a busy road": "+"}, ("microchip", "B"): {"is a student on a tight budget": "-"},
+}
+CONTROLS = {   # kind: (how many in the batch, what to write, an example about another cat)
+    "unrelated": (15, "an answer with a negation in a clause about something not on the sheet, then the fact",
+                  "No clue what her first name was, but she's microchipped."),
+    "double_neg": (12, "an answer with a double negation, or a negation that says the fact the positive way",
+                   ("Not a morning goes by without her yelling for breakfast. / She's never once used the sofa, only "
+                    "her post.")),
+    "not_only": (10, "an answer joining two good facts with not only ... but (also)", ("Not only is she spayed, she "
+                 "tested negative as well.")),
+    "no_doubt": (8, "an answer that starts with no doubt, then the fact", "No doubt about it, she sheds a lot."),
+    "neg_question": (5, ("a buyer's question with the fact turned negative (\"She's not ..., is she?\") and the "
+                         "seller's answer that it is true (\"She is, ...\")"),
+                     "Q: She's not spayed, is she? A: She is, done last spring."),
+}
+CONTROL_WORDS = {   # kind: what check_cues.py looks for in the answer (neg_question: in the question)
+    "unrelated": r"(n't|\bnot\b|\bno\b|\bnever\b)[^.?!]*\b(but|though)\b",
+    "double_neg": r"\b(not|never|no)\b[^.?!]*(\bwithout\b|\bonly\b|n't)|n't[^.?!]*\bwithout\b",
+    "not_only": r"\bnot only\b[^.?!]*\bbut\b", "no_doubt": r"\bno doubt\b",
+    "neg_question": r"(n't|\bnot\b)[^?]*\?",
+}
+YES = r"^\W*(yes|yeah|yep|yea|yup|she is|he is|she has|he has|she does|he does|it is|of course|sure|actually)"
+GOOD_FACTS = {"spayed/neutered", "finished the kitten vaccine series", "fully vaccinated, vet check last month",
+              "microchipped and healthy", "bloodwork last month was normal", "tested negative for FIV and FeLV",
+              "has lived with a dog", "has lived with another cat", "is fine with children", "indoor-only",
+              "indoor with a catio", "calm and lazy", "very cuddly",
+              "uses a scratching post, never the sofa", S.SHEDS_LITTLE, "microchipped", "fully litter trained",
+              "treated for fleas and ear mites last month", "on a monthly flea treatment",
+              "loves being picked up and carried", "eats wet food twice a day, any brand"}
+BAD_FACTS = {"not yet spayed/neutered", "no vaccines yet", "dewormed but not vaccinated", "no vaccination records",
+             "had the first of three kitten vaccines", "had two of three kitten vaccines", S.NO_VET,
+             "recovering from a cold", "bloodwork shows early kidney disease, on a kidney diet", "no bloodwork in years",
+             "on medication for an overactive thyroid", "has some stiff joints", "tested FIV positive",
+             *S.AGAINST.values(), "a bit feisty, scratches when annoyed", "playful and noisy at night", "sheds a lot",
+             "meows loudly for breakfast", "only drinks from a running tap", "picky about litter",
+             "has never had a flea treatment", "not microchipped", "still learning to use the litter box",
+             "litter trained but kicks litter everywhere", "a fussy eater, only eats chicken wet food",
+             "eats one brand of dry food and nothing else", "hates being picked up but sits close by"}
+YES_FACTS = ("spayed/neutered", "fully vaccinated, vet check last month", "finished the kitten vaccine series",
+             "tested negative for FIV and FeLV", "has lived with a dog", "has lived with another cat",
+             "is fine with children", "indoor-only", "microchipped", "fully litter trained")
+HABITS = ("meows loudly for breakfast", "uses a scratching post, never the sofa", "only drinks from a running tap",
+          "afraid of the vacuum", "picky about litter", "sheds a lot", *S.TEMPER, *S.LIFE_FACTS["handling"][0],
+          *S.LIFE_FACTS["food"][0], "on a monthly flea treatment")
+FACT_WORDS = (   # (a piece of a sheet fact, the words that show it in an answer); the first piece found counts
+    ("spayed", r"spay|neuter|fix|intact|entire"), ("vaccin", r"shot|vacc|jab|booster"), ("bloodwork", r"blood|kidney"),
+    ("FIV", r"fiv|felv|test"), ("microchip", r"chip"), ("cold", r"cold|sneez|sniffl"), ("thyroid", r"thyroid|pill"),
+    ("joints", r"joint|stiff"), ("vet visit", r"\bvet\b"), ("dewormed", r"worm"), ("cuddly", r"cuddl"),
+    ("independent", r"independent|own thing"), ("shy", r"shy|stranger"), ("noisy at night", r"night|noisy|play"),
+    ("calm and lazy", r"calm|lazy"), ("feisty", r"scratch|feisty|annoy"), ("follows", r"follow"),
+    ("running tap", r"\btap\b"), ("scratching post", r"post|sofa"), ("sheds", r"shed|fur"),
+    ("breakfast", r"breakfast|meow"), ("picky about litter", r"litter"), ("vacuum", r"vacuum|hoover"),
+    ("indoor-only", r"indoor|inside|out\b"), ("catio", r"catio"), ("indoor-outdoor", r"outdoor|outside|out\b"),
+    ("farm", r"farm|roam"), ("stray", r"stray|found"), ("moved abroad", r"moved|abroad"), ("allergic", r"allerg"),
+    ("care home", r"care home"), ("unplanned litter", r"litter|neighbou?r"), ("food", r"food|eat|chicken|brand|wet|dry"),
+    ("flea", r"flea|mite"), ("litter", r"litter"), ("picked up", r"pick|held|hold|carr"), ("hold", r"pick|held|hold"),
+    ("papers", r"paper|pedigree|purebred"), ("children", r"kid|child"), ("dog", r"dog"), ("cat", r"\bcats?\b"),
+)
+
+
+def fact_words(fact: str) -> str:
+    """The words that show a sheet fact in an answer (check_cues.py looks for them)."""
+    return next(words for piece, words in FACT_WORDS if piece in fact)
+
+
+def sheet_facts(c: dict) -> list[str]:
+    """Every fact on a cat's sheet that can be said in one clause (the age and breed aside)."""
+    return [c["home"], c["fixed"], c["health"], c["virus"], *c["company"], c["temperament"], *c["quirks"],
+            *c.get("extra", []), *c.get("life", [])]
+
+
+def cue_plan(seeds: list[int]) -> dict:
+    """Each paired seed's targets with their small word and form, its control and its "but" answer (plan 2.1 and 7):
+    target families go round each value's CUE_OPTIONS in seed order; control kinds are handed out by the most left of
+    CONTROLS' quotas that the sheet allows, facts drawn from the sheet's other facts."""
+    turn: dict[object, int] = {}
+    left = {k: v[0] for k, v in CONTROLS.items()}
+    members: dict[str, list[int]] = {}
+    for seed in sorted(S.PAIRED_SEEDS):
+        for t in S.PAIRED_SEEDS[seed]:
+            members.setdefault(t[3], []).append(seed)
+    plan = {}
+    for seed in seeds:
+        s = S.sale_for_seed(seed)
+        c, rng = s["cat"], random.Random(seed * 7 + 3)
+        targets = []
+        for topic, side, value, group in S.PAIRED_SEEDS[seed]:
+            key = value if value in CUE_OPTIONS else (topic, side)
+            family = CUE_OPTIONS[key][turn.get(key, 0) % len(CUE_OPTIONS[key])]
+            turn[key] = turn.get(key, 0) + 1
+            words, not_words = SIDE_WORDS[(topic, side)]
+            targets.append({
+                "topic": topic, "side": side, "value": value, "group": group, "cue": family,
+                "cue_words": CUE_FAMILIES[family][0],
+                "form": "fragment" if family == "frag" else "typed" if "typos" in s["seller_style"] else "full",
+                "news": GOOD_NEWS.get((topic, side), "0"),
+                "flip": [p for p in S.paired_buyers(seed) if p in S.PAIRED_BUYERS.get(topic, ())
+                         + S.PAIRED_GROUP_BUYERS.get(group, ())],
+                "expect": FLIP_SIGNS.get((topic, side), {}), "topic_words": TOPIC_WORDS[topic],
+                "side_words": words, "not_words": not_words})
+        said = {t[2] for t in S.PAIRED_SEEDS[seed]}
+        free = [f for f in sheet_facts(c) if f not in said]
+        kind = max((k for k in CONTROLS if left[k] and _control_fits(k, free)),      # the kind least used so far
+                   key=lambda k: left[k] / CONTROLS[k][0])
+        left[kind] -= 1
+        control = _control(kind, free, rng)
+        rest = [f for f in free if f not in control["facts"]] or free
+        good = (sorted(f for f in rest if f in GOOD_FACTS) or sorted(f for f in sheet_facts(c) if f in GOOD_FACTS)
+                or sorted(f for f in rest if f not in BAD_FACTS))      # no good fact at all: a neutral one
+        bad = sorted(f for f in rest if f in BAD_FACTS) or sorted(f for f in sheet_facts(c) if f in BAD_FACTS)
+        pair = [rng.choice(good), rng.choice(bad)]
+        order = "good but bad" if seed % 2 == 0 else "bad but good"
+        facts = pair if order == "good but bad" else pair[::-1]
+        plan[str(seed)] = {
+            "targets": targets, "control": control,
+            "contrast": {"order": order, "facts": facts, "fact_words": [fact_words(f) for f in facts]},
+            "pair_with": {t["group"]: [x for x in members[t["group"]] if x != seed] for t in targets},
+            "buyers": S.paired_buyers(seed), "names": {x["name"]: x["persona"] for x in s["buyers"]}, "fragments": 2}
+    return {"held_out": list(HELD_OUT_WORDS), "held_out_pattern": HELD_OUT_PATTERN,
+            "families": {k: v[0] for k, v in CUE_FAMILIES.items()}, "control_words": CONTROL_WORDS, "yes": YES,
+            "fragment": CUE_FAMILIES["frag"][0], "stop": sorted(S.STOP), "allowed": _sheet_phrases(), "seeds": plan}
+
+
+def _sheet_phrases() -> list[str]:
+    """Every fact a sheet can hold and every persona: a line may share these with a test sentence."""
+    lists = (S.HOME, S.HEALTH_KITTEN, S.HEALTH_ADULT, S.HEALTH_SENIOR, S.VIRUS, *S.COMPANY.values(), S.AGAINST.values(),
+             S.TEMPER, S.QUIRKS, (S.SHEDS_LITTLE, "not yet spayed/neutered", "spayed/neutered"), S.PERSONAS,
+             *(x for kind in S.LIFE_FACTS.values() for x in kind))
+    return sorted({x for xs in lists for x in xs})
+
+
+def _control_fits(kind: str, free: list[str]) -> bool:
+    """Whether the sheet's free facts allow a control of this kind."""
+    if kind == "not_only":
+        return sum(f in GOOD_FACTS for f in free) >= 2
+    if kind == "neg_question":
+        return any(f in YES_FACTS for f in free)
+    return bool(free)
+
+
+def _control(kind: str, free: list[str], rng: random.Random) -> dict:
+    """The control answer of one kind, on facts drawn from the sheet's free facts."""
+    if kind == "not_only":
+        facts = rng.sample(sorted(f for f in free if f in GOOD_FACTS), 2)
+    elif kind == "neg_question":
+        facts = [rng.choice(sorted(f for f in free if f in YES_FACTS))]
+    elif kind == "double_neg" and any(f in HABITS for f in free):
+        facts = [rng.choice(sorted(f for f in free if f in HABITS))]
+    else:                                   # an unknown ("has never met a dog") only when nothing else is left
+        known = [f for f in free if "never met" not in f and "never tested" not in f]
+        facts = [rng.choice(sorted(known or free))]
+    return {"kind": kind, "facts": facts, "fact_words": [fact_words(f) for f in facts],
+            "words": CONTROL_WORDS[kind]}
+
+
+def _said(t: dict) -> str:
+    """A target's fact as the prompt names it."""
+    if t["value"] is None:
+        return {"shed": "how much the cat sheds", "papers": "whether the cat has papers"}[t["topic"]] + \
+            " (not on the sheet: the seller does not know)"
+    if t["topic"] == "age":
+        return f"the age, {t['value']}"
+    if t["topic"] == "vacc" and t["side"] == "U":
+        return "the cat's vaccines (not on the sheet: the seller is not sure)"
+    return t["value"]
+
+
+def cues(seed: int, entry: dict) -> str:
+    """The section of one paired seed's prompt that says which small words its answers use (plan 2.2, 3, 4, 5.1)."""
+    rows = []
+    for k, t in enumerate(entry["targets"], 1):
+        flip = f" Buyers it turns: the one who {'; the one who '.join(t['flip'])}." if t["flip"] else ""
+        take = TAKE.get((t["topic"], t["side"]))
+        rows.append(f"{k}. **{_said(t)}**. Small word: {CUE_FAMILIES[t['cue']][1]}"
+                    + ("" if t["cue"] == "plain" else ", within the answer's first six words")
+                    + f". Form: {FORMS[t['form']]}.{flip}" + (f" How buyers take it: {take}." if take else ""))
+    control = entry["control"]
+    _, what, example = CONTROLS[control["kind"]]
+    contrast = entry["contrast"]
+    pairs = "; ".join(f"{g}: {', '.join(map(str, v))}" for g, v in entry["pair_with"].items())
+    return f'''
+
+## This sale's small words (added 2026-10-29; checked by check_cues.py, read by the reviewer)
+
+Why: the buyer model reads the topic of an answer but not its small words ("not", "never", "but"): "She sheds a lot"
+and "She doesn't shed much" get the same reaction. This batch gives it answers that differ by those words and buyers
+whose offer turns with them. Paired sales ({pairs}) carry the same topic with the opposite meaning.
+
+**A. Target answers.** Each comes out in the answer to a buyer's question that truly asks it (usually a buyer it
+turns), says exactly this side of the fact and nothing more (no detail the sheet does not give: not how she gets on
+badly, not why), and puts the small word within the first six words: "Not microchipped, sorry", not "She came to me
+from a farm and she's not microchipped" (older answers are cut from the end in the buyer's prompt, so a late small
+word can be lost). The note keeps the same small word.
+{chr(10).join(rows)}
+
+**B. One control answer ({control["kind"]}): a negation that does NOT turn the direction.** Write {what}, about:
+{"; ".join(control["facts"])}. Example (another cat; do not copy): "{example}" Every buyer reacts exactly as they would
+to the plain fact: never lower because the sentence has "not", "no" or "never" in it.
+
+**C. One answer joining two facts with "but" or "though"** ({contrast["order"]}): {contrast["facts"][0]}, then
+{contrast["facts"][1]}. Each buyer reacts to both halves that concern them.
+
+**D. Player fragments.** At least two answers start the way players type: "Not really, but ...", "nope, not yet",
+"dunno tbh", "yea all shots done" (a fragment target above counts).
+
+**E. Never use these words anywhere in the sale** (no answer, question, note, reaction, scene or decision; they are
+kept out of training to test the model on them): {", ".join(HELD_OUT_WORDS)}.
+
+**F. Buyers.** Every greeting ends with the kind of cat the buyer wants, following from the life it tells ("I sand
+every boat hull I sell until it shines, and I'd like a cat kept with the same care", not "I'm a plumber, so I want a
+healthy cat").
+"So", "since" and "because" join only a real cause. A buyer with dogs or an older cat at home, hearing about
+vaccines, FIV, fleas, dogs or other cats, says what it means for their own animal by the name from their greeting
+(not a stock line like "Kitten shots are normal").
+'''
+
+
+def write_cue_plan(folder: Path, seeds: list[int]) -> dict:
+    """cue_plan.json for check_cues.py; returns the plan."""
+    plan = cue_plan(seeds)
+    (folder / "cue_plan.json").write_text(json.dumps(plan, indent=1) + "\n")
+    return plan
+
+
+def write_checkers(folder: Path, seeds: list[int], overused: list[str], template: Path) -> None:
+    """The checker copies a batch folder holds (as prompts_2900_2999 has them): check_sales.py from
+    make_sale_checker, check_lessons.py from an earlier batch's copy with this batch's seeds, check_life.py and its
+    life_facts.json."""
+    from make_sale_checker import checker
+    (folder / "check_sales.py").write_text(checker(seeds[0], seeds[-1]))
+    lessons_src = (template / "check_lessons.py").read_text()
+    indoor = {str(s) for s in seeds if S.sale_for_seed(s)["cat"]["home"] == "indoor-only"}
+    for name, value in (("OVERUSED", set(overused)), ("INDOOR_ONLY", indoor), ("NO_OTHER_SEEDS", {str(s) for s in seeds})):
+        lessons_src = re.sub(rf"^{name} = \{{.*?\}}$", f"{name} = {sorted(value)!r}".replace("[", "{").replace("]", "}"),
+                              lessons_src, count=1, flags=re.MULTILINE)
+    (folder / "check_lessons.py").write_text(lessons_src)
+    (folder / "check_life.py").write_text((template / "check_life.py").read_text())
+    life_facts = {str(s): {"kinds": c["life_kinds"], "facts": c["life"]}
+                  for s in seeds for c in [S.sale_for_seed(s)["cat"]] if "life" in c}
+    (folder / "life_facts.json").write_text(json.dumps(life_facts, indent=1))
+
+
 def main() -> None:
-    """Write one prompt per seed (with --quotas: the lessons and this seed's scene list too)."""
+    """Write one prompt per seed (with --quotas: the lessons and this seed's scene list too; --quota-target N: lists
+    toward N scenes a thing, as seeds 2737 on used 50; --cues: the small-words section and cue_plan.json for the
+    stories.PAIRED_SEEDS; --checkers-from FOLDER: the checker copies, check_lessons.py taken from FOLDER)."""
     first, last, out = int(sys.argv[1]), int(sys.argv[2]), Path(sys.argv[3])
     if "--append-life" in sys.argv:
         append_life(out, first, last)
         return
     seeds = list(range(first, last + 1))
     out.mkdir(parents=True, exist_ok=True)
-    lists, overused = quota_lists(seeds) if "--quotas" in sys.argv else ({}, [])
+    target = int(sys.argv[sys.argv.index("--quota-target") + 1]) if "--quota-target" in sys.argv else 30
+    lists, overused = quota_lists(seeds, target) if "--quotas" in sys.argv else ({}, [])
+    plan = write_cue_plan(out, seeds) if "--cues" in sys.argv else None
     for seed in seeds:
         extra = lessons(lists[seed], overused) if lists else ""
         if "--human" in sys.argv:
             extra += human(seed)
         if "life" in S.sale_for_seed(seed)["cat"]:
             extra += life(seed)
+        if plan:
+            extra += cues(seed, plan["seeds"][str(seed)])
         (out / f"seed_{seed}.md").write_text(prompt(seed, extra))
     if lists:
         (out / "scene_lists.json").write_text(json.dumps({str(s): v for s, v in lists.items()}, indent=1))
+    if "--checkers-from" in sys.argv:
+        write_checkers(out, seeds, overused, Path(sys.argv[sys.argv.index("--checkers-from") + 1]))
     print(f"{len(seeds)} prompts in {out}")
-
 
 if __name__ == "__main__":
     main()
