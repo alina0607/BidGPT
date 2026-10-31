@@ -166,7 +166,7 @@ def _extra_fits(name: str, c: dict[str, Any], vet_rule: bool = False) -> bool:
 
 def sale_for_seed(seed: int) -> Sale:
     """seed_sale(seed), with two extra facts (cat["extra"]) on the human-seller seeds (a very old cat's age is 16 to
-    22 years) and one or two LIFE_FACTS on the LIFE_SEEDS. Every tool that writes or checks a sale on a seed uses
+    22 years), one or two LIFE_FACTS on the LIFE_SEEDS, and the target facts on the PAIRED_SEEDS. Every tool that writes or checks a sale on a seed uses
     this, so the sheet and the stored sale agree."""
     s = seed_sale(random.Random(seed))
     if (seed >= YOUNG_NO_VET_FROM or seed in YOUNG_NO_VET_ALSO) and s["cat"]["health"] == NO_VET and s["cat"]["months"] <= 24:
@@ -175,6 +175,9 @@ def sale_for_seed(seed: int) -> Sale:
     if (seed >= YOUNG_NO_VET_FROM or seed in FULL_SERIES_ALSO) and s["cat"]["health"] == FULL_SERIES and s["cat"]["months"] < 4:
         s["cat"]["months"] = 4                  # a finished kitten vaccine series cannot fit a two month old
         s["cat"]["age"] = _age(4)
+    if seed in PAIRED_SEEDS:
+        apply_paired(seed, s)
+        return s
     if seed in LIFE_SEEDS and seed not in HUMAN_SELLER_SEEDS:
         add_life_facts(seed, s["cat"])
     if seed not in HUMAN_SELLER_SEEDS:
@@ -266,6 +269,254 @@ def add_life_facts(seed: int, c: dict[str, Any]) -> None:
         c["life"][c["life"].index(LITTER)] = "found as a stray kitten"     # after the draw, so no other fact moves
     if TREATED in c["life"] and c["health"] == NO_VET:
         c["life"][c["life"].index(TREATED)] = "has never had a flea treatment"
+
+
+# Sales that teach the buyer GPT the small words ("not", "never", "but", data/written_sales/prompts_3000_plan.md,
+# approved by the owner 2026-10-29). Each of these seeds is given two or three target facts, the topics kept as they
+# were: only the values below are new, the other side of an existing topic (decision A), and they are never drawn at
+# random, so no other sheet changes. A target is (topic, side, value, group): side A and B are the two sides of a
+# topic and U is "not known" (value None: the sheet says nothing about it, so the seller does not know); the members
+# of one group are the paired sales (one topic, opposite meanings, the buyer the small word turns in every one of
+# them, plan 2.3). Everything else on the sheet is drawn as before and kept consistent with the targets.
+SHEDS_LITTLE = "sheds very little"
+AGAINST = {"dogs": "doesn't get on with dogs", "children": "doesn't like children",
+           "cats": "doesn't get on with other cats"}
+PAIRED_SEEDS = {   # allocated once to the quotas of plan section 3, then frozen (seeds 3000-3004 are the pilot)
+    3000: (("shed", "B", "sheds very little", "shed1"), ("home", "B", "indoor-outdoor", "home3"),
+            ("spay", "B", "not yet spayed/neutered", "spay3")),
+    3001: (("vacc", "U", "recovering from a cold", "vacc1"), ("dogs", "B", "doesn't get on with dogs", "dogs1")),
+    3002: (("kids", "B", "doesn't like children", "kids1"), ("age", "B", "2 years", "age1")),
+    3003: (("cats", "B", "doesn't get on with other cats", "cats1"), ("clingy", "A", "independent", "clingy2"),
+            ("litter", "A", "fully litter trained", "litter2")),
+    3004: (("age", "A", "2 months", "age1"), ("papers", "U", None, "papers1")),
+    3005: (("noise", "B", "meows loudly for breakfast", "noise2"), ("spay", "A", "spayed/neutered", "spay3")),
+    3006: (("vacc", "B", "no vaccines yet", "vacc2"),
+            ("scratch", "B", "a bit feisty, scratches when annoyed", "scratch1"),
+            ("microchip", "A", "microchipped", "microchip2")),
+    3007: (("cats", "B", "doesn't get on with other cats", "cats2"), ("spay", "B", "not yet spayed/neutered", "spay1")),
+    3008: (("noise", "B", "playful and noisy at night", "noise3"), ("spay", "A", "spayed/neutered", "spay4")),
+    3009: (("shed", "B", "sheds very little", "shed5"), ("vacc", "B", "no vaccination records", "vacc1")),
+    3010: (("kids", "U", "has never met children", "kids2"), ("age", "B", "2 years", "age4"),
+            ("papers", "B", "no papers", "papers2")),
+    3011: (("dogs", "A", "has lived with a dog", "dogs2"),
+            ("scratch", "B", "a bit feisty, scratches when annoyed", "scratch3")),
+    3012: (("shed", "U", None, "shed1"), ("dogs", "B", "doesn't get on with dogs", "dogs2")),
+    3013: (("cats", "U", "has never met another cat", "cats2"), ("senior", "B", "no bloodwork in years", "senior2"),
+            ("microchip", "B", "not microchipped", "microchip1")),
+    3014: (("kids", "B", "doesn't like children", "kids2"), ("noise", "B", "playful and noisy at night", "noise1")),
+    3015: (("clingy", "A", "independent", "clingy3"), ("spay", "A", "spayed/neutered", "spay1")),
+    3016: (("vacc", "B", "no vaccination records", "vacc3"), ("home", "B", "used to roaming a farm", "home2"),
+            ("pests", "A", "on a monthly flea treatment", "pests2")),
+    3017: (("kids", "B", "doesn't like children", "kids3"), ("spay", "B", "not yet spayed/neutered", "spay1"),
+            ("pests", "B", "has never had a flea treatment", "pests1")),
+    3018: (("scratch", "B", "a bit feisty, scratches when annoyed", "scratch2"),
+            ("pests", "B", "has never had a flea treatment", "pests2")),
+    3019: (("senior", "A", "bloodwork last month was normal", "senior2"),
+            ("spay", "B", "not yet spayed/neutered", "spay4")),
+    3020: (("fiv", "A", "tested negative for FIV and FeLV", "fiv3"), ("dogs", "U", "has never met a dog", "dogs1"),
+            ("scratch", "A", "uses a scratching post, never the sofa", "scratch3")),
+    3021: (("kids", "A", "is fine with children", "kids3"),
+            ("clingy", "B", "follows people around like a dog", "clingy2"),
+            ("microchip", "A", "microchipped", "microchip1")),
+    3022: (("vacc", "A", "fully vaccinated, vet check last month", "vacc3"),
+            ("fiv", "A", "tested negative for FIV and FeLV", "fiv2"),
+            ("handling", "A", "loves being picked up and carried", "handling2")),
+    3023: (("vacc", "U", "has some stiff joints", "vacc2"),
+            ("handling", "A", "loves being picked up and carried", "handling1")),
+    3024: (("dogs", "A", "has lived with a dog", "dogs1"),
+            ("food", "A", "eats wet food twice a day, any brand", "food2"),
+            ("origin", "C", "found as a stray and never claimed", "origin2")),
+    3025: (("shed", "A", "sheds a lot", "shed5"),
+            ("pests", "A", "treated for fleas and ear mites last month", "pests1"),
+            ("origin", "C", "found as a stray and never claimed", "origin1")),
+    3026: (("vacc", "A", "finished the kitten vaccine series", "vacc2"),
+            ("spay", "B", "not yet spayed/neutered", "spay2")),
+    3027: (("age", "B", "2 years", "age2"), ("handling", "B", "hates being picked up but sits close by", "handling1")),
+    3028: (("shed", "B", "sheds very little", "shed2"), ("fiv", "A", "tested negative for FIV and FeLV", "fiv1"),
+            ("kids", "A", "is fine with children", "kids2")),
+    3029: (("fiv", "B", "tested FIV positive", "fiv1"), ("home", "B", "indoor-outdoor", "home1"),
+            ("litter", "B", "still learning to use the litter box", "litter1")),
+    3030: (("senior", "A", "bloodwork last month was normal", "senior1"), ("papers", "B", "no papers", "papers1")),
+    3031: (("cats", "A", "has lived with another cat", "cats2"), ("microchip", "B", "not microchipped", "microchip2")),
+    3032: (("dogs", "B", "doesn't get on with dogs", "dogs3"), ("clingy", "B", "very cuddly", "clingy1")),
+    3033: (("fiv", "U", "never tested for FIV or FeLV", "fiv1"), ("age", "B", "2 years", "age3")),
+    3034: (("noise", "B", "meows loudly for breakfast", "noise4"), ("papers", "U", None, "papers2")),
+    3035: (("cats", "U", "has never met another cat", "cats1"),
+            ("handling", "B", "hates being picked up but sits close by", "handling2")),
+    3036: (("shed", "A", "sheds a lot", "shed2"), ("home", "A", "indoor-only", "home3")),
+    3037: (("dogs", "A", "has lived with a dog", "dogs3"), ("clingy", "A", "independent", "clingy1"),
+            ("age", "A", "2 months", "age2")),
+    3038: (("shed", "A", "sheds a lot", "shed3"), ("fiv", "U", "never tested for FIV or FeLV", "fiv2"),
+            ("spay", "B", "not yet spayed/neutered", "spay4")),
+    3039: (("vacc", "A", "fully vaccinated, vet check last month", "vacc1"),
+            ("food", "B", "a fussy eater, only eats chicken wet food", "food1")),
+    3040: (("shed", "B", "sheds very little", "shed3"), ("dogs", "U", "has never met a dog", "dogs2")),
+    3041: (("shed", "A", "sheds a lot", "shed4"), ("food", "B", "eats one brand of dry food and nothing else", "food2"),
+            ("litter", "A", "fully litter trained", "litter1")),
+    3042: (("clingy", "B", "very cuddly", "clingy3"),
+            ("senior", "B", "bloodwork shows early kidney disease, on a kidney diet", "senior1"),
+            ("spay", "B", "not yet spayed/neutered", "spay3")),
+    3043: (("kids", "U", "has never met children", "kids1"),
+            ("scratch", "A", "uses a scratching post, never the sofa", "scratch1"),
+            ("spay", "B", "not yet spayed/neutered", "spay2")),
+    3044: (("kids", "A", "is fine with children", "kids1"), ("cats", "A", "has lived with another cat", "cats1")),
+    3045: (("shed", "B", "sheds very little", "shed4"), ("fiv", "B", "tested FIV positive", "fiv3"),
+            ("scratch", "A", "uses a scratching post, never the sofa", "scratch2")),
+    3046: (("shed", "U", None, "shed2"), ("home", "A", "indoor-only", "home1"),
+            ("litter", "B", "litter trained but kicks litter everywhere", "litter2")),
+    3047: (("shed", "A", "sheds a lot", "shed1"), ("spay", "A", "spayed/neutered", "spay2")),
+    3048: (("age", "A", "2 months", "age4"), ("food", "A", "eats wet food twice a day, any brand", "food1")),
+    3049: (("fiv", "B", "tested FIV positive", "fiv2"), ("home", "A", "indoor-only", "home2"),
+            ("age", "A", "2 months", "age3")),
+}
+PAIRED_BUYERS = {   # topic: the buyers whose direction the small word turns (plan 3.1, last column); always present
+    "shed": ("is allergic and worried about fur",), "vacc": ("wants things in excellent shape",),
+    "fiv": ("already has an older cat at home",), "kids": ("is buying for a family with young kids",),
+    "dogs": ("already has two dogs",), "cats": ("already has an older cat at home",),
+    "clingy": ("works long hours and has little free time", "is retired and home all day"),
+    "scratch": ("cares a lot about how things look", "is buying for a family with young kids"),
+    "home": ("lives on a busy road", "spends weekends hiking and wants an adventure cat"),
+    "noise": ("is a nurse working night shifts",),
+    "papers": ("breeds show cats", "loves rare, premium and pedigree things"),
+    "food": ("is a student on a tight budget",), "pests": ("already has two dogs",),
+    "litter": ("cares a lot about how things look",), "handling": ("is buying for a family with young kids",),
+    "microchip": ("lives on a busy road", "is a student on a tight budget"),
+}
+PAIRED_GROUP_BUYERS = {"spay1": ("breeds show cats",), "spay2": ("breeds show cats",)}   # 6 of the 12 spay sales
+# A breeder only breeds from a young cat, so a breeder never bids on an intact cat over five years old (owner,
+# 2026-10-30: the pilot's breeder raised for "intact" on a 13 year old): the spay sales with a breeder are cats of
+# breeding age on both sides, a sale whose papers need a breeder gets an intact cat of breeding age, and a breeder
+# drawn at random for an older intact cat is given another persona.
+BREEDER = "breeds show cats"
+BREEDING_MONTHS = 60
+COMPANY_TOPIC = {"kids": "children", "dogs": "dogs", "cats": "cats"}
+LIFE_TOPICS = ("food", "pests", "litter", "handling", "microchip", "origin")
+PAIRED_LIFE = 2                      # every paired cat has exactly two LIFE_FACTS (plan 2.2)
+# the kinds plan 3.3 found shortest of good reaction lines are drawn first for the life facts not set by a target
+PAIRED_LIFE_WEIGHTS = {"food": 2, "pests": 2, "litter": 2, "handling": 2, "microchip": 2, "origin": 1}
+LONG_HAIR = ("a Maine Coon", "a Persian", "a Ragdoll")
+
+
+def paired_buyers(seed: int) -> list[str]:
+    """The personas that must bid in a paired sale: the buyers its targets turn."""
+    need = [p for t in PAIRED_SEEDS[seed] for p in PAIRED_BUYERS.get(t[0], ()) + PAIRED_GROUP_BUYERS.get(t[3], ())]
+    return list(dict.fromkeys(need))
+
+
+def paired_months(target: tuple[str, str, str | None, str]) -> list[int]:
+    """The ages (AGES_MONTHS) a target fact fits: a kitten's or an adult's health line, an adult's company, ..."""
+    topic, side, value, _ = target
+    if PAIRED_GROUP_BUYERS.get(target[3]) == (BREEDER,):
+        return [m for m in paired_months((topic, side, value, "")) if m <= BREEDING_MONTHS]
+    if topic == "age":
+        return [2] if side == "A" else [24]
+    if topic == "senior" or value in HEALTH_SENIOR:
+        return [m for m in AGES_MONTHS if m > 120]
+    if value in HEALTH_KITTEN:
+        return [m for m in AGES_MONTHS if (4 if value == FULL_SERIES else 2) <= m < 12]
+    if value in HEALTH_ADULT:
+        return [m for m in AGES_MONTHS if 12 <= m <= 120]
+    if value in LIFE_FACTS["litter"][0] and value not in LIFE_FACTS["litter"][1]:
+        return [m for m in AGES_MONTHS if m < 12]
+    if value in LIFE_FACTS["origin"][1] or (value in LIFE_FACTS["litter"][1] and value not in LIFE_FACTS["litter"][0]):
+        return [m for m in AGES_MONTHS if m >= 12]
+    if value in AGAINST.values():           # not getting on with others is said of a grown cat
+        return [m for m in AGES_MONTHS if m >= 12]
+    if topic == "spay" and side == "A":
+        return [m for m in AGES_MONTHS if m >= 6]
+    return list(AGES_MONTHS)
+
+
+def _kind_of(entry: str) -> str:
+    """The kind of company ("dogs", "cats", "children") a company entry is about."""
+    return next(k for k in COMPANY if entry in COMPANY[k] or entry == AGAINST[k])
+
+
+def apply_paired(seed: int, s: Sale) -> None:
+    """Put a paired seed's targets on the sheet seed_sale drew and make the rest agree with them: an age, breed,
+    health line, quirks, company and two LIFE_FACTS that fit (from their own random draw), and the buyers the targets
+    turn (they replace other personas; every name stays)."""
+    rng, c = random.Random(seed * 3011 + 13), s["cat"]
+    targets = PAIRED_SEEDS[seed]
+    by = {t[0]: t[2] for t in targets}
+    months = [m for m in AGES_MONTHS if all(m in paired_months(t) for t in targets)]
+    if c["months"] not in months:
+        c["months"] = rng.choice(months)
+    c["age"] = _age(c["months"])
+    breeds = [b for b in BREEDS if not ("shed" in by and (b == "a Sphynx" or (by["shed"] == SHEDS_LITTLE and b in LONG_HAIR)))
+              and ("papers" not in by or b in PEDIGREE)]
+    if c["breed"] not in breeds:
+        c["breed"] = rng.choice(breeds)
+    if "spay" in by:
+        c["fixed"] = by["spay"]
+    elif c["months"] < 6:
+        c["fixed"] = "not yet spayed/neutered"
+    if BREEDER in paired_buyers(seed) and c["fixed"] != "spayed/neutered" and c["months"] > BREEDING_MONTHS:
+        c["months"] = rng.choice([m for m in months if m <= BREEDING_MONTHS])     # a breeder the papers need
+        c["age"] = _age(c["months"])
+    life = {t[0]: t[2] for t in targets if t[0] in LIFE_TOPICS}
+    if "vacc" in by or "senior" in by:
+        c["health"] = by.get("vacc") or by["senior"]
+    else:
+        stage = HEALTH_KITTEN if c["months"] < 12 else HEALTH_SENIOR if c["months"] > 120 else HEALTH_ADULT
+        fits = [h for h in stage if not (h == NO_VET and (c["months"] <= 24 or life.get("pests") == TREATED))
+                and not (h == FULL_SERIES and c["months"] < 4) and not ("microchip" in life and "microchipped" in h)
+                and not ("food" in life and "diet" in h) and not (life.get("pests") == "has never had a flea treatment"
+                                                                 and "dewormed" in h)]
+        if c["health"] not in fits:
+            c["health"] = rng.choice(fits)
+    if "fiv" in by:
+        c["virus"] = by["fiv"]
+    if "home" in by:
+        c["home"] = by["home"]
+    company = [by[t] for t in COMPANY_TOPIC if t in by]
+    taken = {_kind_of(e) for e in company}
+    company += [e for e in c["company"] if _kind_of(e) not in taken][:2 - len(company)]
+    if len(company) < 2:
+        kind = rng.choice([k for k in sorted(COMPANY) if k not in {_kind_of(e) for e in company}])
+        company.append(rng.choice(COMPANY[kind]))
+    c["company"] = company
+    temper = [t[2] for t in targets if t[2] in TEMPER]
+    if temper:
+        c["temperament"] = temper[0]
+    elif "scratch" in by and c["temperament"] == TEMPER[5]:  # one that only uses its post doesn't scratch when annoyed
+        c["temperament"] = rng.choice([t for t in TEMPER if t != TEMPER[5]])
+    quirks = [t[2] for t in targets if t[2] in QUIRKS or t[2] == SHEDS_LITTLE]
+    banned = set(quirks)
+    if "shed" in by or c["breed"] == "a Sphynx":
+        banned.add("sheds a lot")
+    if "litter" in life:
+        banned.add("picky about litter")
+    if c["temperament"] == TEMPER[5]:
+        banned.add(QUIRKS[1])
+    kept = [q for q in c["quirks"] if q not in banned]       # the drawn quirks stay where they can
+    rest = [q for q in QUIRKS if q not in banned and q not in kept]
+    while len(quirks) < 2:
+        quirks.append(kept.pop(0) if kept else rest.pop(rng.randrange(len(rest))))
+    c["quirks"] = quirks
+    for key in ("extra", "extra_kinds", "life", "life_kinds"):
+        c.pop(key, None)
+    if by.get("papers") == "no papers":
+        c["extra_kinds"], c["extra"] = ["no papers"], [f"a purebred {c['breed'][2:]}, but never had papers"]
+    c["life_kinds"], c["life"] = list(life), list(life.values())
+    while len(c["life"]) < PAIRED_LIFE:
+        kinds = [k for k in PAIRED_LIFE_WEIGHTS if k not in c["life_kinds"] and _life_options(k, c)]
+        kind = rng.choices(kinds, weights=[PAIRED_LIFE_WEIGHTS[k] for k in kinds])[0]
+        c["life_kinds"].append(kind)
+        c["life"].append(rng.choice(_life_options(kind, c)))
+    if LITTER in c["life"] and "has never met another cat" in c["company"]:
+        c["life"][c["life"].index(LITTER)] = "found as a stray kitten"
+    if TREATED in c["life"] and c["health"] == NO_VET:
+        c["life"][c["life"].index(TREATED)] = "has never had a flea treatment"
+    need = paired_buyers(seed)
+    free = [b for b in reversed(s["buyers"]) if b["persona"] not in need]
+    for persona in need:
+        if persona not in {b["persona"] for b in s["buyers"]}:
+            free.pop(0)["persona"] = persona
+    if c["fixed"] != "spayed/neutered" and c["months"] > BREEDING_MONTHS:
+        for b in s["buyers"]:
+            if b["persona"] == BREEDER:
+                b["persona"] = rng.choice([p for p in PERSONAS if p not in {x["persona"] for x in s["buyers"]}])
 
 
 def facts(s: Sale) -> str:
