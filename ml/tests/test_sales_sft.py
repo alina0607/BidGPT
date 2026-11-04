@@ -154,3 +154,40 @@ def test_mention_order_uses_the_rules_own_naming_test():
     assert mention_order(["picture frame", "vase", "sock"], "A vase, a frame, no sock") == ["vase", "picture frame",
                                                                                            "sock"]
     assert mention_order(["bed", "map", "key"], "My map and my bed") == ["map", "bed", "key"]   # unnamed: last
+
+
+def test_format_10_keeps_the_seller_answers_of_older_rounds(monkeypatch):
+    monkeypatch.setattr(S, "STORY_WORDS", 10**6)
+    cat = {"age": "2 years", "breed": "mixed", "home": "indoor", "fixed": "spayed", "health": "healthy",
+           "virus": "FIV negative", "company": [], "temperament": "calm", "quirks": []}
+    ex = S.examples({**sale(4), "sale": {"cat": cat, "seller_style": "plain", "asking": 80}}, 10)
+    last_ann = [e for e in ex if e["task"] == "react" and e["name"] == "Ann"][-1]["prompt"]
+    assert "Asked earlier: Question 1? -> Answer 1.\n" in last_ann
+    assert "Ann likes answer 1." not in last_ann           # the buyer's own old reaction stays out
+    assert "You ($70 -> $75): Ann likes answer 3." in last_ann    # the last two rounds are as in format 8
+    assert 10 in fmt.SELLER_FORMATS and 10 in fmt.ANSWER_FORMATS and 8 not in fmt.ANSWER_FORMATS
+
+
+def test_format_10_shares_the_story_budget_and_drops_the_oldest_answers_first(monkeypatch):
+    story = S.Story("Ann", answers=True)
+    for k in range(1, 6):
+        story.asked("Bo", f"Q{k}?")
+        story.answered(" ".join(f"w{k}.{i}" for i in range(10)))
+    full = story.text()
+    assert "Q1? -> w1.0 w1.1" in full and full.count("w1.") == 10
+    monkeypatch.setattr(S, "ANSWER_WORDS", 4)
+    assert "Q1? -> w1.0 w1.1 w1.2 w1.3... / Q2?" in story.text()
+    monkeypatch.setattr(S, "STORY_WORDS", S._words(story.text(k=2).splitlines()[1:]) + 16)
+    monkeypatch.setattr(S, "MIN_ANSWER_WORDS", 2)
+    older = story.text().splitlines()[0]
+    assert older.startswith("Asked earlier: Q1? / Q2? -> w2.0") and "Q3? -> w3.0" in older   # Q1 lost its answer
+    monkeypatch.setattr(S, "STORY_WORDS", 0)
+    assert story.text().splitlines()[0] == "Asked earlier: Q1? / Q2? / Q3?"             # no room: as format 8
+
+
+def test_formats_before_10_ignore_the_older_answers():
+    story = S.Story("Ann")
+    for k in range(1, 4):
+        story.asked("Ann", f"Q{k}?")
+        story.answered(f"A{k}.")
+    assert story.text() == "Asked earlier: Q1?\nYou asked: Q2?\nSeller: A2.\nYou asked: Q3?\nSeller: A3."

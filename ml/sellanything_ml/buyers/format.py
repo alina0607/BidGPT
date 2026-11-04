@@ -34,7 +34,11 @@ EXTRA_TOKENS = [PARSE, SAID, "<|profile|>", "<|which|>", ANSWER, "<|weights|>", 
 N_BASE_EXTRA = len(EXTRA_TOKENS)       # the added tokens of prompt formats 1-5 and 7; their models grow to these
 TOKEN_FORMATS = (6,)                   # formats that write the animal, persona and scene things as tokens
 NOTE_FORMATS = (7,)                    # formats with a buyer's note of every answer (sales_sft.Story)
-SELLER_FORMATS = (8,)                  # formats where the model also answers and decides as the seller (sales_sft)
+SELLER_FORMATS = (8, 10)               # formats where the model also answers and decides as the seller (sales_sft)
+# Prompt format 10 (owner, 2026-10-28; notebook 10 item 12 D, docs/prompt-format-older-answers.md): as 8, but rounds
+# older than the last two keep the seller's answer next to their question (sales_sft.Story), so a line the model learns
+# never states a fact its prompt has dropped. No new tokens: it is format 8's vocabulary.
+ANSWER_FORMATS = (10,)
 # Prompt format 9 (owner, 2026-10-16; docs/b4f9-line-first-plan.md): as 5, but a scene is written line first,
 # "line | thing, thing, thing", with the things in the order the line names them, so the model writes its list from the
 # line it has just written instead of writing a line that has to keep to a list. The prompt is the same as format 5's.

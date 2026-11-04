@@ -31,7 +31,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from .format import (ANIMAL_TOKENS, ANSWER, ASK, BUYER_TOKENS, DECIDE, END, IMAGINE, ITEM, LINE_FIRST_FORMATS, LOG,
+from .format import (ANIMAL_TOKENS, ANSWER, ANSWER_FORMATS, ASK, BUYER_TOKENS, DECIDE, END, IMAGINE, ITEM, LINE_FIRST_FORMATS, LOG,
                      NOTE, NOTE_FORMATS, OPEN, PERSONA, REACT, REPLY, SELLER, SELLER_FORMATS, THING_TOKENS,
                      TOKEN_FORMATS)
 from .schema import DATA_DIR
@@ -41,8 +41,17 @@ PROMPT_FORMAT = 5          # 4 (buyer GPT B1): the card shows a budget; 5: no bu
                            # no spending limit, their raises and cuts only have to be reasonable); 6: as 5, with the
                            # animal, the persona and the scene's three things as tokens (format.py); 7: as 5, and
                            # older rounds keep a short note of their answer, which the buyer writes as a task;
-                           # 9: as 5, the scene written line first (format.LINE_FIRST_FORMATS)
+                           # 9: as 5, the scene written line first (format.LINE_FIRST_FORMATS); 10: as 8, and older
+                           # rounds keep the seller's answers (format.ANSWER_FORMATS, Story)
 K = 2                                      # full rounds in the story (fits 768 tokens: devlog 2026-10-11 §3)
+# Format 10: how much of the older rounds' answers the story keeps, so every example still fits 768 tokens
+# (docs/prompt-format-older-answers.md). The whole story may hold STORY_WORDS words; what the rest of it leaves is
+# shared evenly by the older answers, each cut to at most ANSWER_WORDS words (the fact asked for is nearly always in
+# an answer's first words). When the share would be under MIN_ANSWER_WORDS, the oldest answers go first and their
+# rounds keep the question alone, as in format 8.
+STORY_WORDS = 350          # the largest budget (step 10) with no B5-source buyer example over 768 tokens
+ANSWER_WORDS = 10**9       # no cap: in the measurements a cap kept fewer facts for the same fit
+MIN_ANSWER_WORDS = 1
 WRITTEN_SALES = DATA_DIR.parents[1] / "data" / "written_sales"     # sales written to the prompts, not by Qwen
 SOURCES_B1 = (DATA_DIR / "processed" / "buyer_sales_v9_official.jsonl",    # Qwen v9, every line reviewed and corrected
               WRITTEN_SALES / "sales.jsonl")                              # seeds 2048-2099
@@ -60,6 +69,13 @@ SOURCES_B4 = SOURCES_B3 + (WRITTEN_SALES / "sales_b3.jsonl",)
 # format 8's seller tasks; Qwen v9 has no decisions, so its buyers train as before and it adds no seller examples
 SOURCES_B5 = (SOURCES_B1[0], WRITTEN_SALES / "sales_decide.jsonl", WRITTEN_SALES / "sales_b2_decide.jsonl",
               EXTERNAL_SALES / "muse" / "sales_v3_decide.jsonl", WRITTEN_SALES / "sales_b3_decide.jsonl")
+# B6 (2026-10-31): B5's sales with specs_b3 rebuilt into a new file (the small-words sales 3000-3049 and the old sales
+# rewritten to the later rules), so sales_b3_decide.jsonl stays as B5 trained on it; prompt format 10.
+# 2026-11-04: the older batches too, rewritten to the later rules (review_tools/rewrite_report_*.md) and rebuilt into
+# new files, so B5's files stay as B5 trained on them
+SOURCES_B6 = (DATA_DIR / "processed" / "buyer_sales_v9_b6.jsonl", WRITTEN_SALES / "sales_decide_b6.jsonl",
+              WRITTEN_SALES / "sales_b2_decide_b6.jsonl", EXTERNAL_SALES / "muse" / "sales_v3_decide_b6.jsonl",
+              WRITTEN_SALES / "sales_b3_decide_b6.jsonl")
 SOURCES = SOURCES_B2
 OUT_DIR = DATA_DIR / "processed" / "buyers_b2"
 CARDS_FILE = DATA_DIR / "cat_buyer_cards.json"   # persona → the cards written for it (the game's buyer setup)
@@ -111,13 +127,15 @@ class Story:
     """One buyer's own view of a sale as it goes: their opening, every round's question and answer, and their own
     reactions."""
 
-    def __init__(self, name: str, notes: bool = False):
+    def __init__(self, name: str, notes: bool = False, answers: bool = False):
         self.name = name
         self.opening = ""
         self.rounds: list[list[str]] = []          # per round: question line, answer line, own reaction line
         self.questions: list[str] = []
         self.notes: list[str] = []                 # per round: the note of its answer ("" when there is none)
+        self.answers: list[str] = []               # per round: the seller's answer ("" until it is given)
         self.with_notes = notes                    # prompt format 7: older rounds show their notes
+        self.with_answers = answers                # prompt format 10: older rounds show the seller's answers
 
     def asked(self, asker: str, question: str) -> None:
         """A new round starts with this question ("You asked" when it is this buyer's own)."""
@@ -125,6 +143,12 @@ class Story:
         self.rounds.append([f"{who} asked: {question}"])
         self.questions.append(question)
         self.notes.append("")
+        self.answers.append("")
+
+    def answered(self, answer: str) -> None:
+        """The seller's answer to the round under way."""
+        self.rounds[-1].append(f"Seller: {answer}")
+        self.answers[-1] = answer
 
     def text(self, live: bool = False, k: int = K) -> str:
         """The story so far: opening, the questions of older rounds, the last k finished rounds and, if `live`,
@@ -134,14 +158,39 @@ class Story:
         # rounds older than k only keep their questions: the buyer still knows what was asked (so it won't ask it
         # again), but the answers are gone. This is the "forgets after two rounds" problem B1 has (devlog 10-12 §6)
         older = self.questions[:max(0, len(done) - k)]
+        tail = [line for r in done[len(done) - min(k, len(done)):] + (self.rounds[-1:] if live else []) for line in r]
         if older and self.with_notes:             # format 7: the answers come back as the buyer's notes
             lines.append("Asked earlier: " + " / ".join(f"{q} -> {n}" if n else q
                                                          for q, n in zip(older, self.notes, strict=False)))
+        elif older and self.with_answers:         # format 10: the seller's own words come back, shortened
+            # the buyer's old reactions stay out: they are this buyer's lines, not facts, and cost the most tokens
+            lines.append(_earlier(older, self.answers, _words(lines + tail)))
         elif older:
             lines.append("Asked earlier: " + " / ".join(older))
-        for r in done[len(done) - min(k, len(done)):] + (self.rounds[-1:] if live else []):
-            lines += r
-        return "\n".join(lines) or "(nothing yet)"
+        return "\n".join(lines + tail) or "(nothing yet)"
+
+
+def _words(lines: list[str]) -> int:
+    return sum(len(line.split()) for line in lines)
+
+
+def _earlier(questions: list[str], answers: list[str], used: int) -> str:
+    """Format 10's line of older rounds: "Asked earlier: q -> answer / q -> answer", the answers sharing the words
+    the rest of the story (`used`) leaves."""
+    room = STORY_WORDS - used - _words(["Asked earlier:", *questions]) - 2 * len(questions)    # 2: "->" and "/"
+    n = len(questions)                           # older rounds that keep their answer: the newest n
+    while n and min(ANSWER_WORDS, room // n) < MIN_ANSWER_WORDS:
+        n -= 1
+    share = min(ANSWER_WORDS, room // n) if n else 0
+    first = len(questions) - n
+    return "Asked earlier: " + " / ".join(f"{q} -> {short_answer(a, share)}" if i >= first and a else q
+                                          for i, (q, a) in enumerate(zip(questions, answers, strict=False)))
+
+
+def short_answer(answer: str, words: int) -> str:
+    """An older round's answer as format 10 keeps it: its first `words` words, "..." where it was cut."""
+    split = answer.split()
+    return answer if len(split) <= words else " ".join(split[:words]) + "..."
 
 
 def buyer_prompt(card_line: str, story: str, task_token: str, item: str = "cat") -> str:
@@ -169,7 +218,7 @@ class _Walk:
 
     def __init__(self, sale: dict[str, Any], prompt_format: int = PROMPT_FORMAT):
         self.cards, self.seed, self.prompt_format = sale["cards"], sale["seed"], prompt_format
-        self.stories = {n: Story(n, prompt_format in NOTE_FORMATS) for n in self.cards}
+        self.stories = {n: Story(n, prompt_format in NOTE_FORMATS, prompt_format in ANSWER_FORMATS) for n in self.cards}
         self.offers: dict[str, int] = {}
         self.out: list[Example] = []
         self.current: tuple[str, str] | None = None          # (asker, question) of the round under way
@@ -221,7 +270,7 @@ class _Walk:
         self.seller_log.append(f"You: {e['says']}")
         for s in self.stories.values():
             s.asked(*self.current)
-            s.rounds[-1].append(f"Seller: {e['says']}")
+            s.answered(e["says"])
         if self.prompt_format in NOTE_FORMATS and e.get("note"):
             # the asker writes the note (everyone heard the same answer, so one note serves every buyer's story)
             asker = self.current[0]
@@ -335,15 +384,17 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", type=Path, default=OUT_DIR)
     ap.add_argument("--tokenizer", type=Path, default=TOKENIZER_DIR / "sp8192.model")
-    ap.add_argument("--prompt-format", type=int, default=PROMPT_FORMAT, choices=[4, 5, 6, 7, 8, 9],
+    ap.add_argument("--prompt-format", type=int, default=PROMPT_FORMAT, choices=[4, 5, 6, 7, 8, 9, 10],
                     help="4 rebuilds buyer GPT B1's data (budget on the card); 6 uses the persona, animal and thing "
-                         "tokens; 9 writes the scene line first")
-    ap.add_argument("--sources", choices=["b2", "b3", "b4", "b5"], default="b2",
+                         "tokens; 9 writes the scene line first; 10 keeps older rounds' answers")
+    ap.add_argument("--sources", choices=["b2", "b3", "b4", "b5", "b6"], default="b2",
                     help="b2: the sales of B2 (default); b3: all format-5 sales so far plus Muse's 100; "
-                         "b4: b3 plus sales_b3.jsonl (the scene-quota sales)")
+                         "b4: b3 plus sales_b3.jsonl (the scene-quota sales); b5: with the seller's decisions; "
+                         "b6: b5 with specs_b3 rebuilt (sales_b3_decide_b6.jsonl)")
     a = ap.parse_args()
     sources = (SOURCES_B1 if a.prompt_format == 4 else SOURCES_B3 if a.sources == "b3"
-               else SOURCES_B4 if a.sources == "b4" else SOURCES_B5 if a.sources == "b5" else SOURCES)   # B1: its two
+               else SOURCES_B4 if a.sources == "b4" else SOURCES_B5 if a.sources == "b5"
+               else SOURCES_B6 if a.sources == "b6" else SOURCES)   # B1: its two
     print(json.dumps(build(sources, a.out, a.tokenizer, a.prompt_format), indent=1))
 
 
