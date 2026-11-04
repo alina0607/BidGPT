@@ -28,6 +28,7 @@ import argparse
 import hashlib
 import json
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,7 @@ K = 2                                      # full rounds in the story (fits 768 
 # an answer's first words). When the share would be under MIN_ANSWER_WORDS, the oldest answers go first and their
 # rounds keep the question alone, as in format 8.
 STORY_WORDS = 350          # the largest budget (step 10) with no B5-source buyer example over 768 tokens
+MAX_TOKENS = 768           # sft.py skips longer examples; format 10's seller view drops its oldest lines to fit
 ANSWER_WORDS = 10**9       # no cap: in the measurements a cap kept fewer facts for the same fit
 MIN_ANSWER_WORDS = 1
 WRITTEN_SALES = DATA_DIR.parents[1] / "data" / "written_sales"     # sales written to the prompts, not by Qwen
@@ -216,8 +218,10 @@ def seller_prompt(card_line: str, story: str, task_token: str, item: str = "cat"
 class _Walk:
     """Goes through one sale's events, keeping each buyer's story and offer, and collects the examples."""
 
-    def __init__(self, sale: dict[str, Any], prompt_format: int = PROMPT_FORMAT):
+    def __init__(self, sale: dict[str, Any], prompt_format: int = PROMPT_FORMAT,
+                 count: Callable[[str], int] | None = None):
         self.cards, self.seed, self.prompt_format = sale["cards"], sale["seed"], prompt_format
+        self.count = count if prompt_format in ANSWER_FORMATS else None     # tokens in a text (format 10 only)
         self.stories = {n: Story(n, prompt_format in NOTE_FORMATS, prompt_format in ANSWER_FORMATS) for n in self.cards}
         self.offers: dict[str, int] = {}
         self.out: list[Example] = []
@@ -227,14 +231,21 @@ class _Walk:
         self.seller_card = seller_card(sale["sale"]) if self.seller else ""
         self.seller_log: list[str] = []      # everything said in the open: openings, questions, answers, reactions
 
-    def add_seller(self, task: str, story: str, target: str, name: str = "seller") -> None:
-        """One seller example (format 8): the seller's prompt for the task and what the seller did."""
-        prompt = seller_prompt(self.seller_card, story, TASK_TOKENS[task], animal(self.prompt_format))
+    def add_seller(self, task: str, lines: list[str], target: str, name: str = "seller") -> None:
+        """One seller example (format 8): the seller's prompt for the task and what the seller did. With a token
+        count (format 10), the oldest lines go first until prompt and target fit MAX_TOKENS, instead of sft.py
+        skipping the whole example (the late rounds of long sales)."""
+        while True:
+            prompt = seller_prompt(self.seller_card, "\n".join(lines) or "(nothing yet)", TASK_TOKENS[task],
+                                   animal(self.prompt_format))
+            if not self.count or len(lines) <= 1 or self.count(prompt + target + END) <= MAX_TOKENS:
+                break
+            lines = lines[1:]
         self.out.append({"task": task, "name": name, "prompt": prompt, "target": target + END, **self.meta})
 
-    def heard(self, k: int = 12) -> str:
+    def heard(self, k: int = 12) -> list[str]:
         """The seller's view: the last k public lines of the sale."""
-        return "\n".join(self.seller_log[-k:]) or "(nothing yet)"
+        return self.seller_log[-k:]
 
     def add(self, task: str, name: str, offer: int | None, story: str, target: str) -> None:
         """One example: this buyer's prompt for the task and what they did (ending <|end|>)."""
@@ -303,7 +314,7 @@ class _Walk:
             return
         name = e["name"]
         price = money(e["price"]) if e.get("price") else "-"
-        story = self.heard() + f"\n{name}'s final offer: {money(e['offer'])}"
+        story = [*self.heard(), f"{name}'s final offer: {money(e['offer'])}"]
         self.add_seller("decide", story, f"{e['action']} | {price} | {e['says']}", name)
         if e.get("reply"):
             buyer_story = self.stories[name].text() + f"\nSeller ({price}): {e['says']}"
@@ -318,9 +329,10 @@ TASK_TOKENS = {"open": OPEN, "ask": ASK, "react": REACT, "imagine": IMAGINE, "no
 STEPS = ("open", "ask", "answer", "react", "imagine", "decide", "sold")
 
 
-def examples(sale: dict[str, Any], prompt_format: int = PROMPT_FORMAT) -> list[Example]:
+def examples(sale: dict[str, Any], prompt_format: int = PROMPT_FORMAT,
+             count: Callable[[str], int] | None = None) -> list[Example]:
     """Every decision of every buyer in one sale, in order, checked against the sale's own bookkeeping."""
-    walk = _Walk(sale, prompt_format)
+    walk = _Walk(sale, prompt_format, count)
     for e in sale["events"]:
         if e["kind"] not in STEPS:      # getattr below would happily call the wrong thing, so check the name first
             raise ValueError(f"sale {walk.seed}: unknown event kind {e['kind']!r}")
@@ -349,9 +361,14 @@ def build(sources: tuple[Path, ...] = SOURCES, out_dir: Path = OUT_DIR, tokenize
     seeds = [s["seed"] for s in sales]
     if len(seeds) != len(set(seeds)):          # two sales on one seed = the same cat and buyers twice
         raise ValueError("a seed appears in two sales")
+    tok = None
+    if tokenizer:
+        from ..llm.tokenizer import Tokenizer
+        tok = Tokenizer(tokenizer)
+    count = (lambda text: len(tok.encode(text))) if tok else None
     splits: dict[str, list[Example]] = {"train": [], "val": []}
     for sale in sales:
-        splits["val" if is_val(sale["seed"]) else "train"].extend(examples(sale, prompt_format))
+        splits["val" if is_val(sale["seed"]) else "train"].extend(examples(sale, prompt_format, count))
     out_dir.mkdir(parents=True, exist_ok=True)
     if prompt_format == PROMPT_FORMAT and sources == SOURCES:   # the game's cards follow the sales of the model it plays
         write_cards(sales)
@@ -361,9 +378,7 @@ def build(sources: tuple[Path, ...] = SOURCES, out_dir: Path = OUT_DIR, tokenize
         "sales": {split: len({r["seed"] for r in rows}) for split, rows in splits.items()},
         "examples": {split: dict(Counter(r["task"] for r in rows)) for split, rows in splits.items()},
         "authors": dict(Counter(s.get("author", "qwen_v9_edited") for s in sales))}
-    if tokenizer:
-        from ..llm.tokenizer import Tokenizer
-        tok = Tokenizer(tokenizer)
+    if tok:
         lengths: dict[str, list[int]] = {}
         for r in splits["train"] + splits["val"]:
             lengths.setdefault(r["task"], []).append(len(tok.encode(r["prompt"] + r["target"])))

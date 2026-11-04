@@ -191,3 +191,19 @@ def test_formats_before_10_ignore_the_older_answers():
         story.asked("Ann", f"Q{k}?")
         story.answered(f"A{k}.")
     assert story.text() == "Asked earlier: Q1?\nYou asked: Q2?\nSeller: A2.\nYou asked: Q3?\nSeller: A3."
+
+
+def test_format_10_drops_the_seller_views_oldest_lines_to_fit(monkeypatch):
+    cat = {"age": "2 years", "breed": "mixed", "home": "indoor", "fixed": "spayed", "health": "healthy",
+           "virus": "FIV negative", "company": [], "temperament": "calm", "quirks": []}
+    s = {**sale(4), "sale": {"cat": cat, "seller_style": "plain", "asking": 80}}
+    words = lambda text: len(text.split())
+    full = S.examples(s, 10)
+    monkeypatch.setattr(S, "MAX_TOKENS", max(words(e["prompt"] + e["target"]) for e in full) - 5)
+    fit = S.examples(s, 10, words)
+    long = [(a, b) for a, b in zip(full, fit, strict=True) if a != b]
+    assert long and all(a["task"] in ("answer", "decide") for a, _ in long)     # only the seller's view is cut
+    for a, b in long:
+        assert words(b["prompt"] + b["target"]) <= S.MAX_TOKENS and b["prompt"].count("\n") < a["prompt"].count("\n")
+        assert a["prompt"].endswith(b["prompt"].split("\n", 1)[1])               # the oldest lines went first
+    assert S.examples(s, 8, words) == S.examples(s, 8)                             # format 8 as before
