@@ -26,18 +26,20 @@ from pathlib import Path
 from typing import Any
 
 from sellanything_ml.buyers import stories
-from sellanything_ml.buyers.cat_market import max_new, parse
+from sellanything_ml.buyers.cat_market import decide_problem, max_new, parse
 from sellanything_ml.buyers.format import END
 from sellanything_ml.buyers.sales_sft import OUT_DIR
 
 SAID_AMOUNT = re.compile(r"\$(\d+)")             # a dollar amount in a spoken line
 OFFER_NOW = re.compile(r"offer now \$(\d+)")
 OPENING = re.compile(r"Your opening \(\$(\d+)\)")
+FINAL_OFFER = re.compile(r"'s final offer: \$(\d+)")             # format 8: the offer the seller decides on
+ASKING = re.compile(r" \| asking \$(\d+)")                      # format 8: the seller's asking price
 TEMPERATURE, TOP_K = 0.7, 50                       # as the game samples (cat_market.BuyerGPT)
 MAX_MOVE, MAX_PEAK, SAME_QUESTION = 0.40, 1.6, 0.5
-TASKS = ("open", "ask", "react", "imagine", "note")
+TASKS = ("open", "ask", "react", "imagine", "note", "answer", "decide", "reply")    # the last three: format 8
 RATES = ("spoken_ok", "new_question", "new_in_meaning", "rules_ok", "same_direction", "said_equals_offer", "reasonable",
-         "keeps_negation", "faithful")
+         "keeps_negation", "faithful", "same_action")
 NEGATION = re.compile(r"\b(no|not|never|none|unknown|n't)\b", re.I)
 FAITHFUL = 0.5                                     # a note keeps at least half of the written note's content words
 SAMPLES_PER_TASK = 12
@@ -75,6 +77,19 @@ def _react_checks(row: dict[str, Any], ex: dict[str, Any], c: dict[str, Any]) ->
                                          and offer <= MAX_PEAK * (c["opening"] or held))}
 
 
+def _seller_checks(task: str, row: dict[str, Any], ex: dict[str, Any]) -> dict[str, Any]:
+    """Prompt format 8: an answer is one plain line with no dash (what it says is read in the samples); a decision
+    keeps the written decisions' rules and takes the sale's action; a reply accepts or walks as the sale's buyer did."""
+    if task == "answer":
+        return {"spoken_ok": not any(dash in row["says"] for dash in stories.DASHES)}
+    res = {"same_action": row["action"] == parse(task, ex["target"].replace(END, ""))["action"]}
+    if task == "decide":
+        offer, ask = FINAL_OFFER.search(ex["prompt"]), ASKING.search(ex["prompt"])
+        problem = decide_problem(row, int(offer[1]), int(ask[1])) if offer and ask else None
+        res |= {"rules_ok": problem is None, "problem": problem}
+    return res
+
+
 def check(ex: dict[str, Any], out: str, prompt_format: int = 5) -> dict[str, Any]:
     """One completion's checks: readable, the task's rules, and for reactions the direction against the sale's."""
     task, c = ex["task"], context(ex)
@@ -94,6 +109,8 @@ def check(ex: dict[str, Any], out: str, prompt_format: int = 5) -> dict[str, Any
         problem = stories.imagine_problem(row)
         res["rules_ok"], res["problem"] = problem is None, problem
         res["kinds"] = sorted(stories.imagine_kinds(row))       # every rule it breaks, not only the first
+    elif task in ("answer", "decide", "reply"):
+        res |= _seller_checks(task, row, ex)
     elif task == "note":                        # prompt format 7: the note against the written one
         want = ex["target"].replace(END, "")
         res["keeps_negation"] = not NEGATION.search(want) or bool(NEGATION.search(row["says"]))
@@ -175,6 +192,9 @@ def main() -> None:
     ap.add_argument("--device", help="cpu, mps or cuda (default: the fastest one here)")
     ap.add_argument("--seed-offset", type=int, default=0,
                     help="added to every prompt's seed: the same prompts sampled again, to measure sampling noise")
+    ap.add_argument("--temperature", type=float, default=TEMPERATURE, help="0 = always the likeliest token (greedy)")
+    ap.add_argument("--top-k", type=int, default=TOP_K, help="keep the k likeliest tokens (0 = no cut)")
+    ap.add_argument("--top-p", type=float, default=None, help="keep the likeliest tokens up to this probability")
     a = ap.parse_args()
     device = a.device or pick_device()
     model, tok = load_model(a.checkpoint, device)
@@ -186,11 +206,13 @@ def main() -> None:
         torch.manual_seed(i + a.seed_offset)                    # a fixed seed per prompt: the run can be repeated
         ids = torch.tensor([tok.encode(ex["prompt"])], device=device)
         with torch.no_grad():
-            gen = model.generate(ids, max_new(ex["task"], model.prompt_format), temperature=TEMPERATURE, top_k=TOP_K,
-                                 stop_id=tok.eos_id)
+            gen = model.generate(ids, max_new(ex["task"], model.prompt_format), temperature=a.temperature,
+                                 top_k=a.top_k or None, top_p=a.top_p, stop_id=tok.eos_id)
         outputs.append(tok.decode(gen[0, ids.size(1):].tolist()).replace(END, "").strip())
     results = [check(ex, out, model.prompt_format) for ex, out in zip(examples, outputs, strict=True)]
-    report = {"checkpoint": str(a.checkpoint), "seed_offset": a.seed_offset, "examples": len(examples),
+    report = {"checkpoint": str(a.checkpoint), "seed_offset": a.seed_offset,
+              "sampling": {"temperature": a.temperature, "top_k": a.top_k or None, "top_p": a.top_p},
+              "examples": len(examples),
               "sales": len({e["seed"] for e in examples}), "tasks": summary(results, examples)}
     a.out.write_text(json.dumps(report, indent=1))
     print(json.dumps(report, indent=1))
