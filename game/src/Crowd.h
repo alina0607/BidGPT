@@ -44,3 +44,16 @@ struct CrowdView
 };
 
 void DrawCrowd(sa::Backend& b, const CrowdView& view);
+
+// "B4f9" for a buyer played by runs/sft_b4f9 ("buyer_gpt_b4f9"); empty when the state names no model.
+std::string ModelLabel(const nlohmann::json& buyer);
+
+// Who each buyer is, always in view (owner, 2026-10-28): name and model, persona, what they care about, in a panel
+// `width` wide from `top`, the oldest buyers first, leaving out what does not fit above `bottom`. Returns its bottom.
+float DrawBuyerCards(sa::Backend& b, const nlohmann::json& buyers, sa::Vec2 pos, float width, float bottom);
+
+// One frame of the buyers' figures (loading the art the first time; autoplay prints how many looks it has):
+// the first npcs::Count() buyers walk in as painted NPCs, a moment apart; the rest play their mood's animation.
+void UpdateCrowdSprites(sa::Backend& b, CharacterArt& art, const nlohmann::json& buyers,
+                        std::map<std::string, BuyerSprite>& sprites, std::map<std::string, Walker>& walkers, float dt,
+                        bool autoplay);

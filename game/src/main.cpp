@@ -15,7 +15,10 @@ namespace
 
 void PrintUsage()
 {
-    std::cout << "Usage: sell_anything [--backend NAME] [--server HOST:PORT] [--autoplay] [--list-backends]\n"
+    std::cout << "Usage: sell_anything [--backend NAME] [--server HOST:PORT] [--autoplay] [--buy] [--list-backends]\n"
+                 "--buy starts at buying a cat from the model seller (with --autoplay: one test purchase)\n"
+                 "--compare A,B sells cats to two buyer models at once (runs/sft_A, runs/sft_B), side by side;\n"
+                 "  --compare b5:greedy,b5:topp,b5:topk,b5:topk2 compares B5's ways of picking words\n"
                  "Backends in this build:";
     for (std::string_view name : sa::AvailableBackends())
         std::cout << ' ' << name;
@@ -29,6 +32,8 @@ struct Options
     std::string host = "127.0.0.1";
     int port = 5555;
     bool autoplay = false;
+    bool buy = false;
+    std::string compare;
 };
 
 // "host" or "host:port"; false if the port is not a number in 1..65535.
@@ -65,6 +70,10 @@ std::optional<int> ParseArgs(int argc, char** argv, Options& options)
         }
         else if (arg == "--autoplay")
             options.autoplay = true;
+        else if (arg == "--buy")
+            options.buy = true;
+        else if (arg == "--compare" && hasValue)
+            options.compare = argv[++i];
         else if (arg == "--list-backends" || arg == "--help")
         {
             PrintUsage();
@@ -102,7 +111,10 @@ int main(int argc, char** argv)
     config.window.width = static_cast<int>(kWidth);
     config.window.height = static_cast<int>(kHeight);
     sa::Engine engine(std::move(backend), config);
-    engine.SetScene(MakeCanvasScene(ctx));
+    if (!options.compare.empty())
+        engine.SetScene(MakeCompareScene(ctx, options.compare));
+    else
+        engine.SetScene(options.buy ? MakeBuyScene(ctx) : MakeCanvasScene(ctx));
     const bool ran = engine.Run();
     if (!options.autoplay)
         return ran ? 0 : 1;

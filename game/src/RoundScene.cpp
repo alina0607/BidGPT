@@ -39,6 +39,7 @@ constexpr float kButtonH = 40.0f;
 constexpr float kButtonGap = 8.0f;
 constexpr size_t kMaxTyped = 120;           // the server keeps at most this many characters too
 constexpr int kScenePointsPerFrame = 4; // how fast a scene is drawn, stroke by stroke
+constexpr float kCardsBottom = 640.0f;     // the buyer cards stop above the buyers' tags
 
 class RoundScene final : public sa::Scene
 {
@@ -109,6 +110,7 @@ public:
         else
             RenderConversation(b);
         RenderSide(b);
+        RenderBuyerCards(b);
         if (!error_.empty())
         {
             const auto lines = WrapLines(error_, kLogW - 28, 3);
@@ -122,35 +124,9 @@ private:
     void UpdateSprites(sa::Backend& b, float dt)
     {
         stage::Load(b);
-        npcs::Load(b);
         ctx_.girl.Update(b, dt, !answerFocused_);
         ctx_.shelter.Update(b, dt);
-        if (!ctx_.art.Loaded())
-        {
-            ctx_.art.Load(b, AssetDir() + "/characters");
-            if (ctx_.autoplay)
-                std::cout << "art: " << ctx_.art.LookCount() << " looks\n";
-        }
-        size_t index = 0;
-        for (const auto& buyer : state_["buyers"])
-        {
-            const std::string name = buyer["name"];
-            // The first buyers come as painted NPCs, one look each, a moment apart; the rest as pixel sprites.
-            if (index < npcs::Count())
-            {
-                auto walker = walkers_.try_emplace(name, index, 0.7f * static_cast<float>(index)).first;
-                walker->second.Update(dt, buyer["present"].get<bool>());
-                ++index;
-                continue;
-            }
-            ++index;
-            if (const Look* look = ctx_.art.LookFor(name))
-            {
-                BuyerSprite& sprite = sprites_[name];
-                sprite.SetMood(buyer.value("mood", "idle"), *look);
-                sprite.Update(dt, *look);
-            }
-        }
+        UpdateCrowdSprites(b, ctx_.art, state_["buyers"], sprites_, walkers_, dt, ctx_.autoplay);
     }
 
     // --- buyer scenes (docs/design-v2.md §5.4) ---------------------------------------------------
@@ -372,10 +348,24 @@ private:
                 {kSideW - 2 * kSidePad, kFieldH}, ""};
     }
 
+    float SideBottom(const std::vector<ui::Button>& buttons) const
+    {
+        return buttons.empty() ? SideContentTop() : buttons.back().pos.y + kButtonH;
+    }
+
+    // Under the answer panel, who the buyers are, while they negotiate (a cat sale with the buyer GPT names each
+    // buyer's model; the phrase-pool rounds have answer buttons there instead).
+    void RenderBuyerCards(sa::Backend& b) const
+    {
+        if (Over() || sceneOpen_)
+            return;
+        DrawBuyerCards(b, state_["buyers"], {kSideX, SideBottom(Buttons()) + 48}, kSideW, kCardsBottom);
+    }
+
     void RenderSide(sa::Backend& b) const
     {
         const auto buttons = Buttons();
-        const float bottom = buttons.empty() ? SideContentTop() : buttons.back().pos.y + kButtonH;
+        const float bottom = SideBottom(buttons);
         ui::Panel(b, {kSideX, kSideTop}, {kSideW, bottom + 40 - kSideTop});   // 40: the bottom frame and flowers
         float y = kSideTop + kSideHeadTop;
         for (const std::string& line : SideHeading())
@@ -501,6 +491,12 @@ private:
     // so a test round goes through both paths.
     void AutoAnswer(const nlohmann::json& options)
     {
+        if (options.empty())      // a cat sale with the buyer GPT: every answer is typed
+        {
+            static const char* const kTyped[] = {"she is calm and healthy", "no", "3 years old", "she is playful"};
+            Send({{"type", "round_answer"}, {"text", kTyped[autoTurns_++ % 4]}});
+            return;
+        }
         const auto& option = options[std::uniform_int_distribution<size_t>(0, options.size() - 1)(rng_)];
         if (autoTurns_++ % 2 == 0)
         {

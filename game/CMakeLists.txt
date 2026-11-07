@@ -11,6 +11,8 @@ add_executable(sell_anything
   src/CanvasScene.cpp
   src/ConfirmScene.cpp
   src/RoundScene.cpp
+  src/BuyScene.cpp
+  src/CompareScene.cpp
   src/Characters.cpp
   src/Stage.cpp
   src/Shelter.cpp

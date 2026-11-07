@@ -6,8 +6,10 @@
 #include "sa/Text.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <iostream>
 
 namespace
 {
@@ -64,14 +66,18 @@ void Tag(sa::Backend& b, const nlohmann::json& buyer, const CrowdSpot& spot, boo
     const bool present = buyer["present"].get<bool>();
     // The tag grows to its name and offer, with room for its frame and flowers.
     const std::string label = buyer["name"];
-    const float textW = std::max(sa::TextWidth(label, 1.8f), sa::TextWidth("$000 -$000", 1.8f));
+    const std::string model = ModelLabel(buyer);
+    const float nameW = sa::TextWidth(label, 1.8f) + (model.empty() ? 0 : sa::TextWidth(" " + model, 1.3f));
+    const float textW = std::max(nameW, sa::TextWidth("$000 -$000", 1.8f));
     const sa::Vec2 size = ui::PanelFit(b, {textW, kTagH - 14});
     const sa::Vec2 pos{spot.feet.x - size.x / 2, TagTop(spot)};
     const float inTop = ui::PanelInset(b, size).y;
     ui::Panel(b, pos, size, !present ? ui::kButtonOff : hovered ? ui::kWhite : ui::kPanel);
     const std::string name = buyer["name"];
-    sa::DrawText(b, {spot.feet.x - sa::TextWidth(name, 1.8f) / 2, pos.y + inTop - 6}, name, 1.8f,
-                 present ? ui::kInk : ui::kMuted);
+    const float nameX = spot.feet.x - nameW / 2;
+    sa::DrawText(b, {nameX, pos.y + inTop - 6}, name, 1.8f, present ? ui::kInk : ui::kMuted);
+    if (!model.empty())
+        sa::DrawText(b, {nameX + sa::TextWidth(name + " ", 1.8f), pos.y + inTop - 3}, model, 1.3f, ui::kMuted);
     std::string offer = !present ? "left" : buyer["offer"].is_null() ? "-" : Money(buyer["offer"]);
     std::string change;
     const nlohmann::json moved = buyer.value("change", nlohmann::json());
@@ -111,6 +117,66 @@ std::vector<std::pair<std::string, sa::Color>> Details(const nlohmann::json& buy
 }
 
 } // namespace
+
+std::string ModelLabel(const nlohmann::json& buyer)
+{
+    const auto model = buyer.value("model", nlohmann::json());
+    if (!model.is_string())
+        return "";
+    std::string label = model.get<std::string>();
+    if (const size_t cut = label.rfind("buyer_gpt_", 0) == 0 ? 10 : 0; cut)
+        label.erase(0, cut);
+    if (!label.empty())
+        label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(label[0])));
+    return label;
+}
+
+float DrawBuyerCards(sa::Backend& b, const nlohmann::json& buyers, sa::Vec2 pos, float width, float bottom)
+{
+    constexpr float kHead = 1.6f, kBody = 1.3f, kGap = 8.0f;
+    std::vector<std::pair<std::string, sa::Color>> lines;
+    std::vector<float> scales;
+    for (const auto& buyer : buyers)
+    {
+        if (!buyer.value("model", nlohmann::json()).is_string())
+            continue;                       // the player
+        const std::string model = ModelLabel(buyer);
+        lines.emplace_back(buyer["name"].get<std::string>() + (model.empty() ? "" : "  (" + model + ")"),
+                           buyer["present"].get<bool>() ? ui::kInk : ui::kMuted);
+        scales.push_back(kHead);
+        std::string persona = buyer.value("persona", "");
+        if (const size_t who = persona.find(", who "); who != std::string::npos)
+            persona = persona.substr(who + 6);          // "Sam, who is retired and home all day." -> "is retired ..."
+        std::string cares;
+        for (const auto& t : buyer.value("traits", nlohmann::json::array()))
+            cares += (cares.empty() ? "cares about: " : ", ") + t.get<std::string>();
+        for (const std::string& text : {persona, cares})
+            for (std::string& line : WrapLines(text, width - 90, 3, kBody))
+            {
+                lines.emplace_back(std::move(line), text == cares ? ui::kMuted : ui::kInk);
+                scales.push_back(kBody);
+            }
+    }
+    if (lines.empty())
+        return pos.y;
+    float textH = 0;
+    for (size_t i = 0; i < lines.size(); ++i)
+        textH += sa::LineHeight(scales[i]) + (scales[i] == kHead && i ? kGap : 0);
+    const sa::Vec2 size = ui::PanelFit(b, {width - 90, std::min(textH, bottom - pos.y - 60)});
+    const sa::Vec2 inset = ui::PanelInset(b, size);
+    ui::Panel(b, pos, size);
+    float y = pos.y + inset.y;
+    for (size_t i = 0; i < lines.size(); ++i)
+    {
+        if (scales[i] == kHead && i)
+            y += kGap;
+        if (y + sa::LineHeight(scales[i]) > pos.y + size.y - inset.y + 4)
+            break;                          // what does not fit is left out, never drawn over the frame
+        sa::DrawText(b, {pos.x + inset.x, y}, lines[i].first, scales[i], lines[i].second);
+        y += sa::LineHeight(scales[i]);
+    }
+    return pos.y + size.y;
+}
 
 std::string Money(double v, bool cents)
 {
@@ -214,5 +280,35 @@ void DrawCrowd(sa::Backend& b, const CrowdView& view)
                 lines.emplace_back(line, ui::kInk);
             Note(b, spots[i].feet.x, noteBottom, lines, spots[i].name == view.asker, placement);
         }
+    }
+}
+
+void UpdateCrowdSprites(sa::Backend& b, CharacterArt& art, const nlohmann::json& buyers,
+                        std::map<std::string, BuyerSprite>& sprites, std::map<std::string, Walker>& walkers, float dt,
+                        bool autoplay)
+{
+    npcs::Load(b);
+    if (!art.Loaded())
+    {
+        art.Load(b, AssetDir() + "/characters");
+        if (autoplay)
+            std::cout << "art: " << art.LookCount() << " looks\n";
+    }
+    size_t index = 0;
+    for (const auto& buyer : buyers)
+    {
+        const std::string name = buyer["name"];
+        if (index < npcs::Count())
+        {
+            auto walker = walkers.try_emplace(name, index, 0.7f * static_cast<float>(index)).first;
+            walker->second.Update(dt, buyer["present"].get<bool>());
+        }
+        else if (const Look* look = art.LookFor(name))
+        {
+            BuyerSprite& sprite = sprites[name];
+            sprite.SetMood(buyer.value("mood", "idle"), *look);
+            sprite.Update(dt, *look);
+        }
+        ++index;
     }
 }

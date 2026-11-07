@@ -117,7 +117,13 @@ The classifier checkpoint comes from `python -m sellanything_ml.sketch.train --p
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ./build/game/sell_anything                # --autoplay plays a round by itself
+./build/game/sell_anything --buy          # buy a cat: the buyer GPT B5 is the seller and the other buyers
+./build/game/sell_anything --compare b4f9,b5   # the same cat sale to two buyer models, side by side
 ```
+
+"Buy a cat" (on the drawing screen, or `--buy`) turns the sale around: the player is the last buyer in the row,
+opens with an offer, asks the seller one question and reacts to every answer; at the end the seller decides on each
+final offer (accept, counter or refuse). It needs `ml/runs/sft_b5/best.pt` (prompt format 8).
 
 The renderer is chosen at run time (`--backend opengl | dgl | null`); Windows/DGL setup is in
 [`docs/backends.md`](docs/backends.md).

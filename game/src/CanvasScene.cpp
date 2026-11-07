@@ -102,6 +102,11 @@ public:
         }
         if (zoomCat_ >= 0)
             return;                         // the enlarged painting takes the other clicks (UpdateZoom)
+        if (mouse_.Clicked(BuyButton()))
+        {
+            engine.SetScene(MakeBuyScene(ctx_));
+            return;
+        }
         if (mouse_.Clicked(ShelterButton()))
             ToggleShelter(b);
         else if (mouse_.Clicked(ResetButton()))
@@ -137,6 +142,7 @@ public:
                      : doodle ? "彩色貓塗鴉：畫一隻貓，看 AI 讀出牠的樣子"
                               : "Draw on the cloth something you want to sell");
         ui::DrawButton(b, ShelterButton(), mouse_.Position());
+        ui::DrawButton(b, BuyButton(), mouse_.Position());
         if (ctx_.shelter.Started())
             ui::DrawButton(b, ResetButton(), mouse_.Position());
         ui::DrawButton(b, DoodleButton(), mouse_.Position());
@@ -589,6 +595,11 @@ private:
     {
         return {{14, 82}, {200, 44}, stage::LookingAtShelter() ? "Back to stall" : "Cat shelter", !waiting_,
                 ui::ButtonStyle::Cream};
+    }
+    // Buying a cat: the model is the seller and the other buyers (BuyScene).
+    ui::Button BuyButton() const
+    {
+        return {{14, 134}, {200, 44}, "Buy a cat", !waiting_ && !AiBusy(), ui::ButtonStyle::Green};
     }
     // Holds the AI's painting (and its clock) so a stretch that looks wrong can be named by its seconds.
     ui::Button PauseButton() const
