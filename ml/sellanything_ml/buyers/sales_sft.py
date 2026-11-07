@@ -353,6 +353,16 @@ def write_cards(sales: list[dict[str, Any]], path: Path = CARDS_FILE) -> None:
     path.write_text(json.dumps(dict(sorted(cards.items())), indent=1))
 
 
+def _token_report(rows: list[Example], count: Callable[[str], int]) -> dict[str, dict[str, int]]:
+    """Per task: the prompt + target lengths in tokens (median, p95, max, how many over 512 and over 768)."""
+    lengths: dict[str, list[int]] = {}
+    for r in rows:
+        lengths.setdefault(r["task"], []).append(count(r["prompt"] + r["target"]))
+    return {task: {"median": sorted(v)[len(v) // 2], "p95": sorted(v)[int(len(v) * 0.95)], "max": max(v),
+                   "over_512": sum(x > 512 for x in v), "over_768": sum(x > 768 for x in v)}
+            for task, v in lengths.items()}
+
+
 def build(sources: tuple[Path, ...] = SOURCES, out_dir: Path = OUT_DIR, tokenizer: Path | None = None,
           prompt_format: int = PROMPT_FORMAT) -> dict[str, Any]:
     """Write train.jsonl and val.jsonl (and meta.json) from the sales; report counts and, with a tokenizer, the
@@ -361,11 +371,11 @@ def build(sources: tuple[Path, ...] = SOURCES, out_dir: Path = OUT_DIR, tokenize
     seeds = [s["seed"] for s in sales]
     if len(seeds) != len(set(seeds)):          # two sales on one seed = the same cat and buyers twice
         raise ValueError("a seed appears in two sales")
-    tok = None
+    count: Callable[[str], int] | None = None
     if tokenizer:
         from ..llm.tokenizer import Tokenizer
-        tok = Tokenizer(tokenizer)
-    count = (lambda text: len(tok.encode(text))) if tok else None
+        encode = Tokenizer(tokenizer).encode
+        count = lambda text: len(encode(text))     # tokens in a text
     splits: dict[str, list[Example]] = {"train": [], "val": []}
     for sale in sales:
         splits["val" if is_val(sale["seed"]) else "train"].extend(examples(sale, prompt_format, count))
@@ -378,13 +388,8 @@ def build(sources: tuple[Path, ...] = SOURCES, out_dir: Path = OUT_DIR, tokenize
         "sales": {split: len({r["seed"] for r in rows}) for split, rows in splits.items()},
         "examples": {split: dict(Counter(r["task"] for r in rows)) for split, rows in splits.items()},
         "authors": dict(Counter(s.get("author", "qwen_v9_edited") for s in sales))}
-    if tok:
-        lengths: dict[str, list[int]] = {}
-        for r in splits["train"] + splits["val"]:
-            lengths.setdefault(r["task"], []).append(len(tok.encode(r["prompt"] + r["target"])))
-        report["tokens"] = {task: {"median": sorted(v)[len(v) // 2], "p95": sorted(v)[int(len(v) * 0.95)],
-                                   "max": max(v), "over_512": sum(x > 512 for x in v),
-                                   "over_768": sum(x > 768 for x in v)} for task, v in lengths.items()}
+    if count:
+        report["tokens"] = _token_report(splits["train"] + splits["val"], count)
     tasks = ["open", "ask", "react", "imagine"] + (["note"] if prompt_format in NOTE_FORMATS else []) + \
         (["answer", "decide", "reply"] if prompt_format in SELLER_FORMATS else [])
     meta = {"prompt_format": prompt_format, "tasks": tasks, "k": K,
