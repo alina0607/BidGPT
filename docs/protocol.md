@@ -121,6 +121,58 @@ at most 120 characters). The server maps typed text to one option (docs/buyer-ai
 question, and the same question stays open. The log always shows what the player typed; the game
 shows `heard.answer` so a wrong guess is visible. Empty text is an `error`.
 
+### Buying a cat: `round_start` with `"role": "buyer"`, then `round_buy`
+
+With a model that learned the seller's side too (prompt format 8, `runs/sft_b5`), the player can be one of the
+buyers of a cat while the model is the seller and every other buyer (`ml/sellanything_ml/buyers/cat_market.py`;
+the game's screen is `game/src/BuyScene.cpp`, reached by "Buy a cat" or `--buy`):
+
+```json
+{"type": "round_start", "session": "b7", "item": "cat", "buyers": 3, "seed": 7, "role": "buyer", "name": "Alina"}
+```
+
+The reply's `state` adds `asking` (the price tag on the stall), `player`, `waiting` (what the player must do next:
+`open`, `ask`, `react`, `reply`, or null once the sale is over) and the seller's `decisions` (per buyer: `offer`,
+`action` accept / counter / refuse, `price` for a counter, `says`, `problem` when it breaks the written decisions'
+rules, and the buyer's `reply`). The model buyers and the seller act on their own between the player's steps:
+
+```json
+{"type": "round_buy", "session": "b7", "step": "open", "text": "Hi! I'd love a calm cat.", "offer": 50}
+{"type": "round_buy", "session": "b7", "step": "ask", "text": "Has she seen a vet?"}
+{"type": "round_buy", "session": "b7", "step": "react", "text": "Good to know.", "offer": 55}
+{"type": "round_buy", "session": "b7", "step": "reply", "text": "Deal.", "accept": true}
+```
+→ `round_state`. `react` with `offer` 0 walks away. A step that is not the one `waiting` names is an `error`. When
+the seller has decided on every final offer `state.finished` is true and `sold` names the buyer with the highest
+deal (an accepted offer, or a counter-offer the buyer accepted), with `price`, `asking` and every `deals` amount;
+`buyer` is null when there was no deal. There is no `round_sell` in these sales: the seller decides.
+
+### Comparing two buyer models: `round_start` with `"compare"`
+
+While the data is tested (owner, 2026-10-28), one cat sale can be played by two buyer models at once
+(`ml/sellanything_ml/buyers/paired.py`; in the game: `--compare b4f9,b5`, `game/src/CompareScene.cpp`):
+
+```json
+{"type": "round_start", "session": "c1", "item": "cat", "buyers": 4, "compare": ["b4f9", "b5"]}
+```
+
+Each name is a checkpoint, `ml/runs/sft_<name>/best.pt`. Both models' sales have the same buyers (same seed and cards);
+every question is put to both (the models take turns writing it, in the asking buyer's name, `question.by`), and the
+player's `round_answer` text goes to both. Each model writes its own buyers' openings and reactions and keeps its own
+offers. The `state` has `compare`, `seed`, `buyers` (each with `offers` per model), `openings` per model and buyer,
+`turns` (question, `by`, the answer, and `reactions` per model and buyer: `says`, `old`, `offer`, `readable`, or
+`left_before`), the waiting `question`, and `saved`: after the openings and every answer the sale is written to
+`ml/logs/compare/<started>_seed<seed>.json` and `.md`. A comparison is not sold (`round_sell` is an error).
+
+**One model, several ways of picking words** (`ml/sellanything_ml/buyers/variants.py`; in the game:
+`--compare b5:greedy,b5:topp,b5:topk,b5:topk2`). Names of the form `<model>:<way>` play one model in each way:
+`greedy` (always the likeliest word), `topp` (top-p 0.9), `topk` (top-k 50, the game's way) and `topk2` (top-k 50 on
+the seed plus 1), all at temperature 0.7 except greedy; `topk` must be among them. Every buyer's story follows `topk`,
+so in every turn each way answers the very same prompt. The `state` has the same fields as above with one column per
+way, plus `lead` (the way the stories follow), `labels` (each way's name for the screen) and, in every turn and the
+waiting `question`, `ways`: the question each way would have written in that place. Saved to
+`ml/logs/compare/<started>_seed<seed>_<model>_ways.json` and `.md`.
+
 ### `round_sell`
 
 ```json

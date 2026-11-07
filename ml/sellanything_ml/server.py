@@ -15,6 +15,7 @@ import datetime
 import difflib
 import functools
 import json
+import random
 import re
 import traceback
 from pathlib import Path
@@ -94,7 +95,10 @@ class Models:
         self._partial = None
         self._partial_tried = sketch_label is not None
         self._cat_buyers = None
+        self._cat_models: dict[str, Any] = {}
         self._cat_buyers_tried = not model_voice
+        self._cat_seller = None
+        self._cat_seller_tried = not model_voice
         self._shelter = None
         self._doodle_reader = None
         self._doodle_reader_tried = False
@@ -110,12 +114,32 @@ class Models:
 
     @property
     def cat_buyers(self):
-        """Buyer GPT for cat sales, the newest checkpoint in `cat_market.CHECKPOINTS` (now B4f9); CPU, leaving the GPU free."""
+        """Buyer GPT for cat sales, the newest checkpoint in `cat_market.CHECKPOINTS` (now B5); CPU, leaving the GPU free."""
         if not self._cat_buyers_tried:
             self._cat_buyers_tried = True
             from .buyers.cat_market import load_default
             self._cat_buyers = load_default()
         return self._cat_buyers
+
+    def cat_model(self, name: str | None):
+        """The cat buyers' model: the default one (`cat_buyers`), or runs/sft_<name>/best.pt by name ("b5"), for a
+        sale that compares two models (`"compare"`); loaded once, CPU."""
+        if not name:
+            return self.cat_buyers
+        if name not in self._cat_models:
+            from .buyers.cat_market import load_named
+            self._cat_models[name] = load_named(name)
+        return self._cat_models[name]
+
+    @property
+    def cat_seller(self):
+        """A model that learned the seller's side too (prompt format 8, `cat_market.SELLER_CHECKPOINTS`), for cat sales
+        where the player buys; CPU, leaving the GPU free."""
+        if not self._cat_seller_tried:
+            self._cat_seller_tried = True
+            from .buyers.cat_market import load_seller
+            self._cat_seller = load_seller()
+        return self._cat_seller
 
     @property
     def drawer(self):
@@ -448,10 +472,21 @@ def _round_start(msg: dict[str, Any], models: Models) -> dict[str, Any]:
     n = msg.get("buyers", 4)
     if not isinstance(n, int) or not 1 <= n <= 5:
         return _error("'buyers' must be an integer 1..5")
+    role = msg.get("role", "seller")
+    if role not in ("seller", "buyer"):
+        return _error("'role' must be seller or buyer")
     cat_gpt = getattr(models, "cat_buyers", None) if item == "cat" and msg.get("voice") != "phrases" else None
     voice = None if msg.get("voice") == "phrases" else getattr(models, "voice", None)
     try:
-        if cat_gpt is not None:     # a cat sale run by buyer GPT B1: the player types every answer
+        if item == "cat" and msg.get("compare") is not None:     # models or ways side by side (owner, 2026-10-28)
+            rnd = _paired(msg, models, n)
+            if isinstance(rnd, dict):
+                return rnd
+        elif role == "buyer":       # a cat sale where the model is the seller and the player one of the buyers
+            rnd = _cat_buying(msg, models, n)
+            if isinstance(rnd, dict):
+                return rnd
+        elif cat_gpt is not None:   # a cat sale run by the buyer GPT: the player types every answer
             from .buyers.cat_market import CatMarket
             rnd = CatMarket.start(cat_gpt, n, seed=msg.get("seed"))
         else:
@@ -465,6 +500,49 @@ def _round_start(msg: dict[str, Any], models: Models) -> dict[str, Any]:
     return {"type": "round_state", "new_lines": list(rnd.log), "state": rnd.state()}
 
 
+def _paired(msg: dict[str, Any], models: Models, n: int) -> Any:
+    """A cat sale played by two buyer models at once (`"compare": ["b3_resume", "b5"]`, runs/sft_<name>): the same
+    buyers, question and answers for both, each model's own lines and offers (buyers/paired.py). Or one model in
+    several ways of picking words (`"compare": ["b5:greedy", "b5:topp", "b5:topk", "b5:topk2"]`): every way answers
+    the same prompts, the stories follow b5:topk (buyers/variants.py). An error reply when the names do not fit."""
+    names = msg["compare"]
+    if not (isinstance(names, list) and all(isinstance(x, str) for x in names)):
+        return _error("'compare' must be a list of model names")
+    if not hasattr(models, "cat_model"):
+        return _error("this server cannot load models by name")
+    if any(":" in x for x in names):
+        bases = {x.partition(":")[0] for x in names}
+        if len(bases) != 1 or not all(":" in x for x in names):
+            return _error("ways of picking words are compared on one model, like [\"b5:greedy\", \"b5:topk\"]")
+        base = bases.pop()
+        gpt = models.cat_model(base)
+        if gpt is None:
+            return _error(f"no buyer model named {base!r} (runs/sft_{base}/best.pt)")
+        from .buyers.variants import WaysSale
+        return WaysSale.start(gpt, [x.partition(":")[2] for x in names], n, seed=msg.get("seed"))
+    if len(names) != 2:
+        return _error("'compare' must name two models, like [\"b3_resume\", \"b5\"]")
+    gpts = []
+    for name in names:
+        gpt = models.cat_model(name)
+        if gpt is None:
+            return _error(f"no buyer model named {name!r} (runs/sft_{name}/best.pt)")
+        gpts.append(gpt)
+    from .buyers.paired import PairedSale
+    return PairedSale.start(gpts, n, seed=msg.get("seed"))
+
+
+def _cat_buying(msg: dict[str, Any], models: Models, n: int) -> Any:
+    """A cat sale with the model as the seller and the player as the last buyer, or an error reply."""
+    seller_gpt = getattr(models, "cat_seller", None) if msg.get("item") == "cat" else None
+    if seller_gpt is None:
+        return _error("buying needs item 'cat' and a model that learned the seller's side (runs/sft_b5)")
+    from .buyers.cat_market import CatMarket, seller_sheet
+    seed = msg.get("seed") if isinstance(msg.get("seed"), int) else random.randrange(2**31)
+    name = msg.get("name") if isinstance(msg.get("name"), str) and msg["name"].strip() else "You"
+    return CatMarket.start(seller_gpt, n, seed=seed, seller=seller_sheet(seed), player=name.strip()[:20])
+
+
 def _round_answer(msg: dict[str, Any], models: Models) -> dict[str, Any]:
     """An option the player clicked ("option"), or what they typed ("text"). A typed answer's reply
     says which option it was taken as ("heard"), or null when the buyer asked again."""
@@ -475,6 +553,30 @@ def _round_answer(msg: dict[str, Any], models: Models) -> dict[str, Any]:
         return _in_round(msg, models, typed)
     return _in_round(msg, models, lambda rnd: {
         "type": "round_state", "new_lines": rnd.answer(str(msg.get("option"))), "state": rnd.state()})
+
+
+def _round_buy(msg: dict[str, Any], models: Models) -> dict[str, Any]:
+    """The player-buyer's step in a cat sale with a model seller (`state.waiting` says which): open (text, offer),
+    ask (text), react (text, offer; 0 walks away) or reply (accept, text) to the seller's counter-offer."""
+    step, text, offer = msg.get("step"), msg.get("text"), msg.get("offer")
+
+    def act(rnd):
+        if getattr(rnd, "player", None) is None:
+            raise ValueError("this round has no player-buyer; start it with role 'buyer'")
+        if not isinstance(text, str):
+            raise ValueError("round_buy needs 'text'")
+        if step == "open":
+            lines = rnd.player_open(text, offer)
+        elif step == "ask":
+            lines = rnd.player_ask(text)
+        elif step == "react":
+            lines = rnd.player_react(text, offer)
+        elif step == "reply":
+            lines = rnd.player_reply(msg.get("accept") is True, text)
+        else:
+            raise ValueError("'step' must be open, ask, react or reply")
+        return {"type": "round_state", "new_lines": lines, "state": rnd.state()}
+    return _in_round(msg, models, act)
 
 
 def _round_sell(msg: dict[str, Any], models: Models) -> dict[str, Any]:
@@ -510,6 +612,7 @@ HANDLERS = {
     "round_start": _round_start,
     "round_answer": _round_answer,
     "round_sell": _round_sell,
+    "round_buy": _round_buy,
     "scene": _scene,
     "shelter_paint": _shelter_paint,
     "shelter_poll": _shelter_poll,

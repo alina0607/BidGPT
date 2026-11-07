@@ -251,3 +251,89 @@ def test_the_server_routes_cat_sales_to_the_buyer_gpt(monkeypatch):
     reply = handle_message({"type": "round_answer", "session": "s", "text": "She is calm."}, Models())
     assert reply["heard"]["answer"] == "She is calm."
     assert handle_message({"type": "round_answer", "session": "s", "option": "x"}, Models())["type"] == "error"
+
+
+def test_a_compare_sale_plays_two_named_models_side_by_side(monkeypatch, tmp_path):
+    from test_paired import CARDS, models
+
+    from sellanything_ml.buyers import cat_market, paired
+
+    a, b = models()
+
+    class Models:
+        rounds: dict = {}
+        cat_buyers = a
+        voice = None
+
+        def cat_model(self, name):
+            return {"a": a, "b": b}.get(name)
+
+    monkeypatch.setattr(cat_market, "load_cards", lambda: CARDS)
+    monkeypatch.setattr(paired, "COMPARE_DIR", tmp_path)
+    start = {"type": "round_start", "session": "c", "item": "cat", "buyers": 2, "seed": 4}
+    reply = handle_message({**start, "compare": ["a", "b"]}, Models())
+    assert reply["type"] == "round_state" and reply["state"]["compare"] == ["a", "b"]
+    reply = handle_message({"type": "round_answer", "session": "c", "text": "yes"}, Models())
+    assert len(reply["state"]["turns"]) == 1 and reply["heard"]["answer"] == "yes"
+    assert handle_message({"type": "round_sell", "session": "c", "buyer": "x"}, Models())["type"] == "error"
+    assert handle_message({**start, "compare": ["a", "zz"]}, Models())["type"] == "error"
+    assert handle_message({**start, "compare": "a"}, Models())["type"] == "error"
+    assert list(tmp_path.glob("*_seed4.md"))                                 # saved for study
+
+
+def test_a_compare_sale_plays_one_model_in_several_ways_of_picking_words(monkeypatch, tmp_path):
+    from test_variants import CARDS, ByWay
+
+    from sellanything_ml.buyers import cat_market, paired
+
+    class Models:
+        rounds: dict = {}
+        voice = None
+
+        def cat_model(self, name):
+            return ByWay() if name == "b5" else None
+
+    monkeypatch.setattr(cat_market, "load_cards", lambda: CARDS)
+    monkeypatch.setattr(paired, "COMPARE_DIR", tmp_path)
+    start = {"type": "round_start", "session": "w", "item": "cat", "buyers": 2, "seed": 4}
+    ways = ["b5:greedy", "b5:topp", "b5:topk", "b5:topk2"]
+    reply = handle_message({**start, "compare": ways}, Models())
+    assert reply["type"] == "round_state" and reply["state"]["compare"] == ways
+    assert reply["state"]["labels"]["b5:topk"] == "top-k 50 (the game)"
+    reply = handle_message({"type": "round_answer", "session": "w", "text": "yes"}, Models())
+    assert set(reply["state"]["turns"][0]["reactions"]) == set(ways)
+    for bad in (["b5:greedy", "b4:topk"], ["b5:topk", "b5"], ["b5:greedy", "b5:topp"], ["zz:topk"]):
+        assert handle_message({**start, "compare": bad}, Models())["type"] == "error"
+    assert list(tmp_path.glob("*_seed4_b5_ways.md"))
+
+
+def test_the_player_buys_a_cat_from_the_model_seller():
+    from test_cat_market import CARDS, ScriptedSeller
+
+    from sellanything_ml.buyers import cat_market
+
+    class SellerModels:
+        rounds: dict = {}
+        cat_seller = ScriptedSeller()
+
+    real = cat_market.load_cards
+    cat_market.load_cards = lambda: CARDS
+    try:
+        m = SellerModels()
+        start = {"type": "round_start", "session": "b", "item": "cat", "buyers": 2, "seed": 9, "role": "buyer",
+                 "name": "Alina"}
+        state = handle_message(start, m)["state"]
+        assert state["waiting"] == "open" and state["player"] == "Alina" and state["asking"] > 0
+        step = {"type": "round_buy", "session": "b"}
+        assert handle_message({**step, "step": "ask", "text": "Hi?"}, m)["type"] == "error"       # not yet
+        state = handle_message({**step, "step": "open", "text": "Hello!", "offer": 40}, m)["state"]
+        while state["waiting"] in ("react", "ask"):
+            msg = {"step": "react", "text": "OK.", "offer": 50} if state["waiting"] == "react" else \
+                {"step": "ask", "text": "Is she healthy?"}
+            state = handle_message({**step, **msg}, m)["state"]
+        assert state["waiting"] == "reply"
+        reply = handle_message({**step, "step": "reply", "text": "Deal.", "accept": True}, m)
+        assert reply["state"]["finished"] and reply["state"]["sold"]["deals"]["Alina"] == 70
+        assert handle_message({**start, "role": "watcher"}, m)["type"] == "error"
+    finally:
+        cat_market.load_cards = real
