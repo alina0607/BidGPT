@@ -1,7 +1,7 @@
 """Buy a cat in the terminal: the model (prompt format 8, B5) is the seller and the other buyers, you are one buyer.
 
     cd ml && PYTHONPATH=. python -m sellanything_ml.cat_buy --name Alina
-    cd ml && PYTHONPATH=. python -m sellanything_ml.cat_buy --checkpoint runs/sft_b5/best.pt --seed 7 --buyers 3
+    cd ml && PYTHONPATH=. python -m sellanything_ml.cat_buy --checkpoint runs/sft_b6/best.pt --seed 7 --buyers 3
 
 The sale is the game's own (buyers/cat_market.py with a model seller): the other buyers open, you open, and in seat
 order everyone asks one question; the seller answers each and everyone reacts with a new offer (you type yours). At
@@ -43,7 +43,8 @@ def ask_offer(prompt: str, allow_zero: bool) -> int:
 def main() -> None:
     """One sale at the stall, with the player as the last buyer."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--checkpoint", type=Path, help="a prompt-format-8 model (default: the newest, runs/sft_b5)")
+    ap.add_argument("--checkpoint", type=Path,
+                    help="a model that learned the seller's side, prompt format 8 or 10 (default: runs/sft_b6)")
     ap.add_argument("--name", default="Alina", help="your name at the stall")
     ap.add_argument("--buyers", type=int, default=3, help="model buyers besides you")
     ap.add_argument("--seed", type=int, default=None)
@@ -51,7 +52,7 @@ def main() -> None:
     a = ap.parse_args()
     gpt = BuyerGPT(a.checkpoint, a.device) if a.checkpoint else load_seller(a.device)
     if gpt is None:
-        raise SystemExit("no prompt-format-8 model on disk yet (runs/sft_b5/best.pt)")
+        raise SystemExit("no model that learned the seller's side on disk yet (runs/sft_b6/best.pt)")
     seed = a.seed if a.seed is not None else int.from_bytes(os.urandom(3), "big")
     m = CatMarket.start(gpt, a.buyers, seed=seed, seller=seller_sheet(seed), player=a.name)
     print(f"A cat for sale, asking ${m.seller['asking']} (sale {seed}). Other buyers: "

@@ -123,9 +123,10 @@ shows `heard.answer` so a wrong guess is visible. Empty text is an `error`.
 
 ### Buying a cat: `round_start` with `"role": "buyer"`, then `round_buy`
 
-With a model that learned the seller's side too (prompt format 8, `runs/sft_b5`), the player can be one of the
-buyers of a cat while the model is the seller and every other buyer (`ml/sellanything_ml/buyers/cat_market.py`;
-the game's screen is `game/src/BuyScene.cpp`, reached by "Buy a cat" or `--buy`):
+With a model that learned the seller's side too (prompt format 8 or 10: `runs/sft_b6`, else `runs/sft_b5`), the
+player can be one of the buyers of a cat while the model is the seller and every other buyer
+(`ml/sellanything_ml/buyers/cat_market.py`; the game's screen is `game/src/BuyScene.cpp`, reached by "Buy a cat" or
+`--buy`):
 
 ```json
 {"type": "round_start", "session": "b7", "item": "cat", "buyers": 3, "seed": 7, "role": "buyer", "name": "Alina"}

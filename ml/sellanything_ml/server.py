@@ -114,7 +114,8 @@ class Models:
 
     @property
     def cat_buyers(self):
-        """Buyer GPT for cat sales, the newest checkpoint in `cat_market.CHECKPOINTS` (now B5); CPU, leaving the GPU free."""
+        """Buyer GPT for cat sales, the newest checkpoint in `cat_market.CHECKPOINTS` (now B6); CPU, leaving the GPU
+        free."""
         if not self._cat_buyers_tried:
             self._cat_buyers_tried = True
             from .buyers.cat_market import load_default
@@ -133,8 +134,8 @@ class Models:
 
     @property
     def cat_seller(self):
-        """A model that learned the seller's side too (prompt format 8, `cat_market.SELLER_CHECKPOINTS`), for cat sales
-        where the player buys; CPU, leaving the GPU free."""
+        """A model that learned the seller's side too (prompt format 8 or 10, `cat_market.SELLER_CHECKPOINTS`), for
+        cat sales where the player buys; CPU, leaving the GPU free."""
         if not self._cat_seller_tried:
             self._cat_seller_tried = True
             from .buyers.cat_market import load_seller
@@ -536,7 +537,7 @@ def _cat_buying(msg: dict[str, Any], models: Models, n: int) -> Any:
     """A cat sale with the model as the seller and the player as the last buyer, or an error reply."""
     seller_gpt = getattr(models, "cat_seller", None) if msg.get("item") == "cat" else None
     if seller_gpt is None:
-        return _error("buying needs item 'cat' and a model that learned the seller's side (runs/sft_b5)")
+        return _error("buying needs item 'cat' and a model that learned the seller's side (runs/sft_b6)")
     from .buyers.cat_market import CatMarket, seller_sheet
     seed = msg.get("seed") if isinstance(msg.get("seed"), int) else random.randrange(2**31)
     name = msg.get("name") if isinstance(msg.get("name"), str) and msg["name"].strip() else "You"

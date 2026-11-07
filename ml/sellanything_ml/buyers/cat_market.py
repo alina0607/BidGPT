@@ -35,10 +35,12 @@ from .sales_sft import CARDS_FILE, TASK_TOKENS, Story, animal, buyer_prompt, car
 from .schema import DATA_DIR
 
 ML_DIR = DATA_DIR.parent
-# newest first; B4f9 is retired (owner, 2026-10-28), so the game's buyers are B5
-CHECKPOINTS = (ML_DIR / "runs" / "sft_b5" / "best.pt", ML_DIR / "runs" / "sft_b3_resume" / "best.pt",
-               ML_DIR / "runs" / "sft_b2" / "best.pt", ML_DIR / "runs" / "sft_b1" / "best.pt")
-SELLER_CHECKPOINTS = (ML_DIR / "runs" / "sft_b5" / "best.pt",)        # prompt format 8: the seller's side too
+# newest first; B4f9 is retired (owner, 2026-10-28); the game's buyers are B6 (owner, 2026-11-06)
+CHECKPOINTS = (ML_DIR / "runs" / "sft_b6" / "best.pt", ML_DIR / "runs" / "sft_b5" / "best.pt",
+               ML_DIR / "runs" / "sft_b3_resume" / "best.pt", ML_DIR / "runs" / "sft_b2" / "best.pt",
+               ML_DIR / "runs" / "sft_b1" / "best.pt")
+SELLER_CHECKPOINTS = (ML_DIR / "runs" / "sft_b6" / "best.pt",        # prompt formats 8 and 10: the seller's side too
+                      ML_DIR / "runs" / "sft_b5" / "best.pt")
 TYPICAL = 75                               # a typical cat's price in the sales the model learned from
 # note: prompt format 7; answer, decide and reply: format 8 (the longest written ones are 117, 64 and 51 tokens).
 # open was 48 until B5: 1,923 of B5's 8,030 written openings are longer (the b3 sales', up to 83 tokens) and were cut.
@@ -101,7 +103,7 @@ def load_named(name: str, device: str = "cpu") -> BuyerGPT | None:
 
 
 def load_seller(device: str = "cpu") -> BuyerGPT | None:
-    """The newest model that learned the seller's side too (prompt format 8), or None."""
+    """The newest model that learned the seller's side too (prompt format 8 or 10), or None."""
     path = next((p for p in SELLER_CHECKPOINTS if p.exists()), None)
     return BuyerGPT(path, device) if path else None
 
