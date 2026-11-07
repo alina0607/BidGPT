@@ -129,3 +129,13 @@ def test_accum_gives_the_same_step_as_one_batch():
         assert abs(after[i][1] - after[j][1]) < 1e-5
         for a, b in zip(after[i][2].parameters(), after[j][2].parameters(), strict=True):
             assert torch.allclose(a, b, atol=1e-6)
+
+
+def test_top_p_keeps_only_the_likeliest_tokens_up_to_p():
+    from sellanything_ml.llm.model import _pick
+    torch.manual_seed(0)
+    logits = torch.log(torch.tensor([[0.89, 0.08, 0.02, 0.01]]))     # one sure token, a long tail
+    picks = {_pick(logits, 1.0, None, 0.9).item() for _ in range(200)}
+    assert picks == {0, 1}                                           # 0.89 < 0.9, so the second one stays too
+    assert {_pick(logits, 1.0, None, 0.5).item() for _ in range(50)} == {0}
+    assert len({_pick(logits, 1.0, None, None).item() for _ in range(400)}) == 4     # no cut: the tail can come up

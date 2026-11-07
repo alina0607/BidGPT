@@ -243,8 +243,9 @@ class GPT(nn.Module):
     def generate(self, idx: torch.Tensor, max_new_tokens: int, temperature: float = 1.0,
                  top_k: int | None = None, stop_id: int | None = None,
                  uncond: torch.Tensor | None = None, guidance: float = 1.0,
-                 preallocate: bool = False) -> torch.Tensor:
-        """Autoregressive sampling with a KV cache; temperature 0 means greedy.
+                 preallocate: bool = False, top_p: float | None = None) -> torch.Tensor:
+        """Autoregressive sampling with a KV cache; temperature 0 means greedy. top_k keeps the k likeliest tokens;
+        top_p (nucleus sampling, Holtzman et al. 2020) keeps the likeliest tokens until their probability reaches p.
 
         Classifier-free guidance (Ho & Salimans 2021): `uncond` is the same prompt with the condition
         replaced by a "no condition" token, run in the same batch. The next-token logits become
@@ -268,7 +269,7 @@ class GPT(nn.Module):
             if guided:
                 cond, free = next_logits[:n], next_logits[n:]
                 next_logits = free + guidance * (cond - free)
-            nxt = _pick(next_logits, temperature, top_k)
+            nxt = _pick(next_logits, temperature, top_k, top_p)
             out = torch.cat([out, nxt], dim=1)
             if (stop_id is not None and (nxt == stop_id).all()) or pos >= self.cfg.max_seq_len:
                 break
@@ -277,16 +278,22 @@ class GPT(nn.Module):
         return out
 
 
-def _pick(logits: torch.Tensor, temperature: float, top_k: int | None) -> torch.Tensor:
+def _pick(logits: torch.Tensor, temperature: float, top_k: int | None, top_p: float | None = None) -> torch.Tensor:
     """One token per row: the most likely at temperature 0, otherwise sampled from the temperature-scaled
-    distribution, optionally cut to the top_k tokens. (B, V) → (B, 1)."""
+    distribution, optionally cut to the top_k tokens and/or to the smallest set of likeliest tokens whose probability
+    reaches top_p. (B, V) → (B, 1)."""
     if temperature == 0:
         return logits.argmax(dim=-1, keepdim=True)
     logits = logits / temperature
     if top_k:
         kth = logits.topk(top_k, dim=-1).values[:, -1:]
         logits = logits.masked_fill(logits < kth, float("-inf"))
-    return torch.multinomial(logits.softmax(-1), 1)
+    if top_p is None or top_p >= 1:
+        return torch.multinomial(logits.softmax(-1), 1)
+    probs, order = logits.softmax(-1).sort(dim=-1, descending=True)
+    # a token stays while the tokens before it hold less than top_p: the likeliest one always stays
+    probs = probs * (probs.cumsum(-1) - probs < top_p)
+    return order.gather(-1, torch.multinomial(probs, 1))
 
 
 def grow_vocab(model: GPT, vocab_size: int) -> GPT:
