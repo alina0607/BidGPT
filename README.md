@@ -1,4 +1,26 @@
-# Sell Anything
+# BidGPT
+
+> A GPT trained from scratch to play a room of buyers: each one asks about the cat for sale, hears every answer,
+> moves their offer for reasons from their own life, and says why.
+
+**BidGPT** is the buyer model of **Sell Anything**, the game below.
+
+- **Trained from scratch:** a 71M-parameter Llama-style GPT with its own SentencePiece tokenizer, pre-training on FineWeb-Edu, then supervised
+  fine-tuning on written cat sales. No pretrained weights, no API.
+- **One model, many buyers:** every buyer has a persona card (allergic, two dogs at home, works long hours, breeds
+  show cats, ...). The same seller answer, such as "barely sheds, but she isn't spayed yet", moves each buyer a
+  different way, and each buyer explains the move in their own words. The model also plays the seller, who accepts,
+  counters or refuses each final offer.
+- **Improved only through data and training,** and measured on held-out sales. Example: when the training data for
+  "sheds very little" went from 0 to 15 reactions, the allergic buyer went from lowering their offer 98% of the time
+  to raising it 99% of the time.
+- **Training data (version B7):** 929 sales, 133,564 examples over seven tasks (open, ask, react, imagine, answer,
+  decide, reply).
+
+"GPT" here is the architecture (a decoder-only transformer, trained from scratch); it is not based on OpenAI's
+models.
+
+## Sell Anything: the game around it
 
 > Draw anything. Try to sell it. A room of AI buyers decides what it's worth.
 
@@ -42,9 +64,9 @@ Try to sell a rainbow, the sun or your elbow and every buyer refuses. A tiger or
 black-market style: buyers with kids, retirees and apartment dwellers walk away at once, and the
 answer without papers is the cheap one.
 
-## The buyer model
+## The first buyer model (v1 to v4, any drawn item)
 
-A 12.9M-parameter GPT (pre-trained on 100M FineWeb-Edu tokens, then fine-tuned on dialogue the price
+Before BidGPT, a 12.9M-parameter GPT (pre-trained on 100M FineWeb-Edu tokens, then fine-tuned on dialogue the price
 engine generates) writes what buyers say and judges how each answer moves their interest. Every
 version was scored on the same test questions, including 33 items it never saw in training:
 
