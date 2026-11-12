@@ -13,6 +13,8 @@ dependencies = []
 [project.optional-dependencies]
 train = ["torch>=2.3", "numpy", "pillow", "pyarrow", "sentencepiece", "tiktoken", "scipy", "matplotlib"]
 dev = ["pytest>=8", "ruff>=0.6"]
+# The cat painter, Brush GPT and the eye model live in their own repo; pinned to a commit.
+brush = ["brush-gpt @ git+https://github.com/alina0607/brush-gpt@447828507379108474302aacccb6ebc5d27984cb"]
 
 [tool.setuptools.packages.find]
 include = ["sellanything_ml*"]
