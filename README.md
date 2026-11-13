@@ -129,8 +129,8 @@ drag it to the Dock. The parts it runs, separately:
 
 ```bash
 cd ml
-pip install -e ".[dev,train]"
-python -m sellanything_ml.server        # 127.0.0.1:5555
+uv sync --extra train                   # environment from uv.lock, with the dev tools
+uv run python -m sellanything_ml.server # 127.0.0.1:5555
 ```
 
 The classifier checkpoint comes from `python -m sellanything_ml.sketch.train --per-class 15000 --epochs 12`

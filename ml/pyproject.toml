@@ -12,12 +12,32 @@ dependencies = []
 
 [project.optional-dependencies]
 train = ["torch>=2.3", "numpy", "pillow", "pyarrow", "sentencepiece", "tiktoken", "scipy", "matplotlib"]
-dev = ["pytest>=8", "ruff>=0.6"]
 # The cat painter, Brush GPT and the eye model live in their own repo; pinned to a commit.
 brush = ["brush-gpt @ git+https://github.com/alina0607/brush-gpt@447828507379108474302aacccb6ebc5d27984cb"]
 
 [tool.setuptools.packages.find]
 include = ["sellanything_ml*"]
+
+# On Linux (including CI) install the CPU build of torch: the default Linux wheel
+# pulls several gigabytes of CUDA libraries that a machine without a GPU never uses.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.1",
+    # pre-commit 4.7 needs Python 3.11; on 3.10 the hooks are simply not installed.
+    "pre-commit>=4.7.0; python_version >= '3.11'",
+    "pytest>=9.2.0",
+    # Pinned exactly: ruff 0.16.0 widened the default rule set from 59 to 413 rules.
+    # 0.15.22 is the newest release with the rule set this code base follows.
+    "ruff==0.15.22",
+]
 
 [tool.ruff]
 line-length = 100
@@ -27,5 +47,19 @@ target-version = "py310"
 testpaths = ["tests"]
 
 [tool.ruff.lint.per-file-ignores]
+# Patterns start with "**/" so they also match when ruff runs from the repository root
+# with --config ml/pyproject.toml (the pre-commit hook); a pattern without "/" matches the
+# file name, so the scripts/ entry works from both places.
 # Teaching notebooks keep short matplotlib calls on one line (ax.set_xticks([]); ax.set_yticks([])).
-"notebooks/*.ipynb" = ["E702"]
+# The other codes are findings already on main when ruff was pinned (2026-11-12), listed
+# file by file so CI is green while new findings anywhere else still fail. Fix them and
+# delete the entries.
+"**/notebooks/*.ipynb" = ["E402", "E702", "E731"]
+"**/notebooks/08_brush_gpt_painting.ipynb" = ["F541"]
+"**/sellanything_ml/buyers/sales_sft.py" = ["E731"]
+"**/sellanything_ml/sketch/linegpt.py" = ["E731"]
+"**/tests/test_sales_sft.py" = ["E731"]
+"**/tests/test_small_words.py" = ["E402"]
+"**/tools/backfill_cat_eye_checks.py" = ["E402"]
+"**/tools/plan_follow_figure.py" = ["F841"]
+"build_girl_turn_layers.py" = ["E701", "E702", "E731", "E741"]
