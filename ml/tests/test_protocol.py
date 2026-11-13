@@ -317,7 +317,7 @@ def test_the_player_buys_a_cat_from_the_model_seller():
         cat_seller = ScriptedSeller()
 
     real = cat_market.load_cards
-    cat_market.load_cards = lambda: CARDS
+    setattr(cat_market, "load_cards", lambda: CARDS)      # restored in the finally below
     try:
         m = SellerModels()
         start = {"type": "round_start", "session": "b", "item": "cat", "buyers": 2, "seed": 9, "role": "buyer",

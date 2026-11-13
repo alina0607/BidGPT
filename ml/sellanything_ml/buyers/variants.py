@@ -16,10 +16,10 @@ import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import paired
-from .cat_market import CatMarket, _typed, parse
+from .cat_market import BuyerGPT, CatMarket, _typed, parse
 from .paired import PairedSale, _short
 
 
@@ -69,14 +69,15 @@ class WaysSale(PairedSale):
         self.market, self.every, self.keys = market, every, keys          # keys: way -> column name ("b5:greedy")
         self.lead = keys[every.lead]
         self.stats = {k: {"lines": 0, "unreadable": 0} for k in keys.values()}
-        self.offers = {k: {} for k in keys.values()}                       # each way's last offer per buyer
+        self.offers: dict[str, dict[str, Any]] = {k: {} for k in keys.values()}                       # each way's last offer per buyer
         self.openings = {k: {} for k in keys.values()}
         for call in every.calls:
             if call["task"] == "open":
                 for way, row in self._parsed(call).items():
                     readable = row is not None and not row.get("unreadable")
-                    self.openings[way][call["name"]] = {"says": row["says"] if readable else None,
-                                                        "offer": row.get("offer") or None if readable else None,
+                    got = cast(dict[str, Any], row)       # read only when readable (so not None)
+                    self.openings[way][call["name"]] = {"says": got["says"] if readable else None,
+                                                        "offer": got.get("offer") or None if readable else None,
                                                         "written": call["lines"][self._way(way)]}
                     self.offers[way][call["name"]] = (row or {}).get("offer") or None
 
@@ -90,7 +91,7 @@ class WaysSale(PairedSale):
             raise ValueError(f"the ways must be different names from {sorted(WAYS)}, with {LEAD!r} among them")
         seed = seed if isinstance(seed, int) else random.randrange(2**31)
         every = _Every(gpt, {w: WAYS[w] for w in ways}, LEAD)
-        market = CatMarket.start(every, n_buyers, seed=seed, cards=cards, ask=False)
+        market = CatMarket.start(cast(BuyerGPT, every), n_buyers, seed=seed, cards=cards, ask=False)     # _Every says like one
         model = _short(gpt.name)
         keys = {w: f"{model}:{w}" for w in ways}
         sale = cls(market, every, keys, seed, (out_dir or paired.COMPARE_DIR) if save else None)
@@ -140,7 +141,7 @@ class WaysSale(PairedSale):
         self.log.append(f"You: {text}")
         before, at = dict(self.market.offers), len(self.every.calls)
         self.market._answered(text, None, "player")
-        turn = {**self.question, "answer": text, "reactions": {k: {} for k in self.keys.values()}}
+        turn: dict[str, Any] = {**self.question, "answer": text, "reactions": {k: {} for k in self.keys.values()}}
         for call in self.every.calls[at:]:
             if call["task"] != "react":
                 continue

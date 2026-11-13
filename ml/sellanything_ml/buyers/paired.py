@@ -35,7 +35,7 @@ class PairedSale:
         self.sales = sales
         self.seed = seed
         self.turns: list[dict[str, Any]] = []
-        self.question: dict[str, str] | None = None
+        self.question: dict[str, Any] | None = None
         self.started = datetime.datetime.now()
         self.out_dir = out_dir
         self.log: list[str] = []            # every line of both sales, "[b5] Name: ...", for the server's play log

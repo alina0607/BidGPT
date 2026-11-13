@@ -26,7 +26,7 @@ import random
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import stories
 from .asking import asking
@@ -263,11 +263,21 @@ class CatMarket:
             m._advance()
         return m
 
+    @property
+    def _me(self) -> str:
+        """The player-buyer's name; set whenever the player-buyer methods run (start(player=...))."""
+        return cast(str, self.player)
+
+    @property
+    def _sheet(self) -> dict[str, Any]:
+        """The seller's sheet; set whenever the model is the seller (start(seller=...))."""
+        return cast(dict[str, Any], self.seller)
+
     def _seat_player(self) -> None:
         """The player-buyer sits last, after the model buyers opened: no card, nothing the model writes for them."""
-        self.cards[self.player] = {"persona": "is you", "cares_about": []}
-        self.stories[self.player] = self._story(self.player)
-        self.offers[self.player], self.moods[self.player], self.waiting = 0, "idle", "open"
+        self.cards[self._me] = {"persona": "is you", "cares_about": []}
+        self.stories[self._me] = self._story(self._me)
+        self.offers[self._me], self.moods[self._me], self.waiting = 0, "idle", "open"
 
     def _story(self, name: str) -> Story:
         """A buyer's story kept the way this model's training sales kept it (format 10: older answers too)."""
@@ -355,7 +365,7 @@ class CatMarket:
     def _answered(self, text: str, who: str | None, source: str) -> None:
         """The seller's answer to the waiting question, heard by everyone; every model buyer still here reacts.
         `who` is the name the game's log shows it under (None: it is in the log already)."""
-        asker, q = self.question
+        asker, q = cast(tuple[str, str], self.question)     # called only while a question waits
         if who:
             self.log.append(f"{who}: {text}")
             self.sources.append(source)
@@ -415,7 +425,8 @@ class CatMarket:
                 z for z in scenes.ZONES if z not in used)
             used.add(zone)
             objects.append({"label": thing, "role": "prop", "zone": zone, "box": list(scenes.ZONES[zone]),
-                            "share": scenes.SIZES[prop.size if prop else "medium"], "reason": row["says"]})
+                            "share": scenes.SIZES[prop.size if prop else "medium"],
+                            "reason": cast(dict[str, Any], row)["says"]})
         self.pictured[buyer] = objects
         return objects
 
@@ -427,7 +438,7 @@ class CatMarket:
 
     def _seller_say(self, task: str, story: str) -> tuple[dict[str, Any] | None, str]:
         """One seller line from the model, parsed (None when unreadable: shown as it is and counted), and the text."""
-        prompt = seller_prompt(seller_card(self.seller), story, TASK_TOKENS[task], animal(self.gpt.prompt_format))
+        prompt = seller_prompt(seller_card(self._sheet), story, TASK_TOKENS[task], animal(self.gpt.prompt_format))
         text = self.gpt.say(prompt, task, self.rng.randrange(2**31))
         self.stats["lines"] += 1
         row = parse(task, text, self.gpt.prompt_format)
@@ -463,7 +474,7 @@ class CatMarket:
     def _decide_all(self) -> None:
         """The seller's decision on every final offer (accept, counter or refuse), each from the same view of the sale
         with that buyer's final offer, as in the training sales; a model buyer answers a counter-offer at once."""
-        heard, ask = self.heard(), self.seller["asking"]
+        heard, ask = self.heard(), self._sheet["asking"]
         for name in self.present():
             offer = self.offers[name]
             row, _ = self._seller_say("decide", heard + f"\n{name}'s final offer: {money(offer)}")
@@ -492,7 +503,7 @@ class CatMarket:
             elif d["action"] == "counter" and (d.get("reply") or {}).get("action") == "accept":
                 deals[name] = d["price"]
         buyer = max(deals, key=lambda n: deals[n], default=None)     # max keeps the first of equal prices
-        self.sold = {"buyer": buyer, "price": deals.get(buyer), "typical": TYPICAL, "asking": self.seller["asking"],
+        self.sold = {"buyer": buyer, "price": None if buyer is None else deals.get(buyer), "typical": TYPICAL, "asking": self._sheet["asking"],
                      "deals": deals}
         if buyer:
             self.moods[buyer] = "won"
@@ -510,9 +521,9 @@ class CatMarket:
         if not isinstance(offer, int) or offer <= 0:
             raise ValueError("the first offer must be a whole number of dollars above 0")
         start = len(self.log)
-        self._log(self.player, f"{says} ({money(offer)})", "player")
-        self.public.append(f"{self.player} ({money(offer)}): {says}")
-        self.offers[self.player], self.waiting = offer, None
+        self._log(self._me, f"{says} ({money(offer)})", "player")
+        self.public.append(f"{self._me} ({money(offer)}): {says}")
+        self.offers[self._me], self.waiting = offer, None
         self._next_question()
         self._advance()
         return self.log[start:]
@@ -522,9 +533,9 @@ class CatMarket:
         self._expect("ask")
         text = _typed(text, "question")
         start = len(self.log)
-        self._log(self.player, text, "player")
-        self.public.append(f"{self.player} asked: {text}")
-        self.question, self.waiting = (self.player, text), None
+        self._log(self._me, text, "player")
+        self.public.append(f"{self._me} asked: {text}")
+        self.question, self.waiting = (self._me, text), None
         self._advance()
         return self.log[start:]
 
@@ -534,11 +545,11 @@ class CatMarket:
         says = _typed(says, "reaction")
         if not isinstance(offer, int) or offer < 0:
             raise ValueError("the offer must be a whole number of dollars (0 to walk away)")
-        start, old = len(self.log), self.offers[self.player]
-        self._log(self.player, f"{says} ({money(old)} -> {money(offer)})", "player")
-        self.public.append(f"{self.player} ({money(old)} -> {money(offer)}): {says}")
-        self.offers[self.player], self.waiting = offer, None
-        self.changes[self.player] = {"amount": offer - old}
+        start, old = len(self.log), self.offers[self._me]
+        self._log(self._me, f"{says} ({money(old)} -> {money(offer)})", "player")
+        self.public.append(f"{self._me} ({money(old)} -> {money(offer)}): {says}")
+        self.offers[self._me], self.waiting = offer, None
+        self.changes[self._me] = {"amount": offer - old}
         self._next_question()
         self._advance()
         return self.log[start:]
@@ -548,8 +559,8 @@ class CatMarket:
         self._expect("reply")
         says = _typed(says, "reply")
         start = len(self.log)
-        self._log(self.player, says, "player")
-        self.decisions[self.player]["reply"] = {"action": "accept" if accept else "walk", "says": says}
+        self._log(self._me, says, "player")
+        self.decisions[self._me]["reply"] = {"action": "accept" if accept else "walk", "says": says}
         self.waiting = None
         self._advance()
         return self.log[start:]
