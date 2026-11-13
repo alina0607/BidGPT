@@ -28,7 +28,8 @@ def match_run_palette(image):
     rgb=a[:,:,:3].astype(float)
     hsv=rgb2hsv(rgb/255)
     h,s,v=hsv[:,:,0],hsv[:,:,1],hsv[:,:,2]
-    clamp=lambda x:np.clip(x,0,1)
+    def clamp(x):
+        return np.clip(x,0,1)
     skin=clamp((h-.025)/.025)*clamp((.16-h)/.04)*clamp((v-.55)/.2)*clamp((.55-s)/.15)
     pink=(clamp((h-.88)/.06)+clamp((.04-h)/.03))*clamp((s-.15)/.15)*clamp((v-.55)/.2)
     rgb-=skin[:,:,None]*np.array([6,8,7])
@@ -49,12 +50,14 @@ def mirrored(image):
 
 def pack(name,frames,timings,parts=None):
     atlas=Image.new('RGBA',(440*len(frames),360))
-    for i,f in enumerate(frames):atlas.paste(f,(440*i,0))
+    for i,f in enumerate(frames):
+        atlas.paste(f,(440*i,0))
     atlas.save(OUT/f'{name}.png')
     meta={'cell':[440,360],'anchor':[220,350],'cols':len(frames),'rows':1,
           'frames':len(frames),'frame_ms':timings,'standing':320,
           'purpose':'isolated candidate; requires visual acceptance before production'}
-    if parts:meta['parts']=parts
+    if parts:
+        meta['parts']=parts
     (OUT/f'{name}.json').write_text(json.dumps(meta,indent=2)+'\n')
 
 
@@ -247,7 +250,8 @@ def align_details(one,two,flow,p):
     fy=(encoded[:,:,0]-.5)*32
     fx=(encoded[:,:,1]-.5)*32
     valid=flow[:,:,3]>.5
-    fy[~valid]=0;fx[~valid]=0
+    fy[~valid]=0
+    fx[~valid]=0
     yy,xx=np.mgrid[:360,:400]
     def sample(im,x,y):
         return np.stack([map_coordinates(im[:,:,c],[y,x],order=1,mode='constant') for c in range(4)],-1)
@@ -264,7 +268,8 @@ def main_surface(surfaces):
                 continue
             if x.tolist() in a:
                 continue
-            a.append(x.tolist());b.append(y.tolist())
+            a.append(x.tolist())
+            b.append(y.tolist())
     extra=[
         ((132,163),(142,126)),((128,202),(113,146)),((127,241),(100,165)),
         ((123,279),(80,176)),((122,313),(48,198)),
@@ -276,7 +281,9 @@ def main_surface(surfaces):
         ((219,330),(219,333)),((246,330),(263,329)),((245,343),(260,340)),
         ((188,296),(170,280)),((248,296),(238,280)),
     ]
-    for x,y in extra:a.append(x);b.append(y)
+    for x,y in extra:
+        a.append(x)
+        b.append(y)
     return np.array(a,float),np.array(b,float)
 
 
@@ -299,22 +306,28 @@ def compatible_topology(a,b):
     for _ in range(100):
         edges={}
         for n,t in enumerate(tris):
-            for i in range(3):edges.setdefault(tuple(sorted((t[i],t[(i+1)%3]))),[]).append(n)
+            for i in range(3):
+                edges.setdefault(tuple(sorted((t[i],t[(i+1)%3]))),[]).append(n)
         best=None
         for (i,j),adj in edges.items():
-            if len(adj)!=2:continue
+            if len(adj)!=2:
+                continue
             old=[tris[k] for k in adj]
             k=next(x for x in old[0] if x not in (i,j))
-            l=next(x for x in old[1] if x not in (i,j))
-            new=[orient([k,l,i]),orient([l,k,j])]
-            if min(area(a,t) for t in new)<1e-5:continue
-            if abs(sum(area(a,t) for t in new)-sum(area(a,t) for t in old))>.001:continue
+            m=next(x for x in old[1] if x not in (i,j))
+            new=[orient([k,m,i]),orient([m,k,j])]
+            if min(area(a,t) for t in new)<1e-5:
+                continue
+            if abs(sum(area(a,t) for t in new)-sum(area(a,t) for t in old))>.001:
+                continue
             improvement=penalty(old)-penalty(new)
             if improvement>1e-5 and (best is None or improvement>best[0]):
                 best=(improvement,adj,new)
-        if best is None:break
+        if best is None:
+            break
         _,adj,new=best
-        for n,t in zip(adj,new):tris[n]=t
+        for n,t in zip(adj,new):
+            tris[n]=t
     return np.array(tris)
 
 
@@ -331,8 +344,10 @@ def build_direction(left=False):
     start,ls=split(idle)
     end,le=split(ready,True)
     if not left:
-        for name,im in start.items(): im.save(OUT/'source-layers'/f'{name}.png')
-        for name,im in end.items(): im.save(OUT/'target-layers'/f'{name}.png')
+        for name,im in start.items():
+            im.save(OUT/'source-layers'/f'{name}.png')
+        for name,im in end.items():
+            im.save(OUT/'target-layers'/f'{name}.png')
     surfaces=keyed_surfaces()
     surfaces['main']=main_surface(surfaces)
     # Shared surface owns head, torso, near hair and legs. Only occluding braid
@@ -351,7 +366,8 @@ def build_direction(left=False):
     order=['far_hair','main','far_arm','near_arm']
     registration={}
     for name in order:
-        if name=='far_hair':continue
+        if name=='far_hair':
+            continue
         a,b=surfaces[name]
         middle=(a+b)/2
         one=warp_layer(start[name],a,middle,topologies[name])
@@ -377,8 +393,10 @@ def build_direction(left=False):
                 patch=morph_surface(one,two,p)
             out=patch+out*(1-patch[:,:,3:4])
         frame=rgba(out)
-        if i==0: frame=idle.copy()
-        if i==16: frame=ready.copy()
+        if i==0:
+            frame=idle.copy()
+        if i==16:
+            frame=ready.copy()
         frame=mirrored(frame) if left else padded(frame)
         frame.save(OUT/direction/f'{i:02}.png')
         frames.append(frame)
@@ -414,4 +432,5 @@ def build():
     assert left[-1].tobytes()==ImageOps.mirror(run[4]).tobytes()
 
 
-if __name__=='__main__': build()
+if __name__=='__main__':
+    build()

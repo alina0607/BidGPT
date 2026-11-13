@@ -62,7 +62,6 @@ testpaths = ["tests"]
 "**/tests/test_small_words.py" = ["E402"]
 "**/tools/backfill_cat_eye_checks.py" = ["E402"]
 "**/tools/plan_follow_figure.py" = ["F841"]
-"build_girl_turn_layers.py" = ["E701", "E702", "E731", "E741"]
 
 [tool.mypy]
 python_version = "3.10"
