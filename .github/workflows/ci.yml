@@ -65,7 +65,7 @@ jobs:
       - name: Lint
         run: uv run ruff check . ../scripts
 
-      # Only the files listed in [tool.mypy] files (pyproject.toml) are checked.
+      # Checks all of sellanything_ml and tests ([tool.mypy] files in pyproject.toml).
       - name: Type check
         run: uv run mypy
 
