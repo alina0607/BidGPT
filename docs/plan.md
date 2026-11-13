@@ -16,6 +16,79 @@ not by reading code. Progress is logged in [`devlog/`](devlog).
 | Data and checkpoints stay out of git (`ml/data/raw`, `ml/data/processed`, `ml/checkpoints`) | Size; publish to Hugging Face later |
 | Long jobs run in the background with logs in `ml/runs/<job>/` | One GPU (Apple MPS); jobs are serialized, never run two trainings at once |
 
+## Model rules
+
+These rules decide what counts as improving a model; other documents cite them as "model rule N".
+
+### 1. Only the model itself
+
+The models (buyer GPT, Brush GPT, sketch classifiers) get better only through the model and its training:
+pre-training data and amount, model size, tokenizer, SFT data and mix, prompt format, loss, hyperparameters, training
+length, and anything the model learns and then uses (for example a `[no class]` token learned by class dropout and
+used for guidance).
+
+Forbidden: rules, keyword matching or hand-written cases standing in for the model's understanding; picking among
+several outputs (best-of-n, reranking) or a filter that hides bad outputs; retrieving or copying training examples
+instead of generating; a special case added for a failure seen in play (fix the data or the training instead).
+
+Every change is measured with an independent judge on held-out data, with the number before and after, and a model
+that is not good enough yet is reported as such. When it is unclear whether a change is training or a patch, the owner
+decides first.
+
+Parts written before this rule that do not meet it yet:
+
+| Part | What it does | Why it is still used |
+|---|---|---|
+| `ml/sellanything_ml/buyers/answers.py` | reads typed answers with yes/no, number and word rules | buyer GPT v6b did not read answers well enough (devlog 2026-10-07) |
+| `ModelVoice` guardrail → `phrases.py` pools | shows a hand-written line when a model line is malformed, off topic or disagrees with the engine's Δ | in use since v1 |
+| `drawgpt.tidy` | removes the stuck run of dots at the end of a drawing that never reached `[end]` | in use since drawing GPT v1 |
+
+### 2. Part models (Brush GPT)
+
+A whole-face model paints the block-in (the face's shape and outline, the ears' shape, where the eyes, nose and mouth
+are, the big shadows) and learns only from cats whose face and ears are whole. Separate trained part models (eyes;
+ears; nose and mouth) paint the detail as strokes on zoomed canvases, conditioned on what the whole-face model
+produced; each learns from every photo where its part is whole. This is a cascade of learned models, allowed under four
+conditions:
+
+1. a part model generates strokes; it never retrieves or pastes parts from the training data;
+2. it sees only what the earlier models produced (their strokes, the face points and plans), never the photo;
+3. no picking among several outputs;
+4. results are always reported for the whole-face model alone and for the whole system.
+
+### 3. Pre-training text mixed into SFT
+
+Mixing knowledge texts or other pre-training text into SFT is training data (the idea of InstructGPT's PPO-ptx and of
+replay), allowed under three conditions:
+
+1. the mixed-in texts never contain the knowledge probe's statements (`ml/tools/probe_knowledge.py`), not even reworded;
+2. they never contain the held-out evaluation sales;
+3. whether it helps is decided by the held-out buyer results (rules, direction, offer error), not by the probe alone.
+
+### 4. Player-specified looks and edits (Brush GPT)
+
+The player names what the cat looks like (coat colour, pattern, each eye's colour, patches, drawn shapes such as a
+heart on the forehead) and may later change one thing ("left eye yellow"). The conditional model paints all of it:
+
+1. Forbidden: changing strokes or pixels by a rule (recolouring the eye strokes, pasting a heart, tinting a region);
+   choosing by a hand-written rule which strokes to keep and which to regenerate; keeping or replaying the data
+   painter's strokes in the game; picking among several samples.
+2. The main test is whole-painting generation from the attributes alone, nothing kept; its attribute agreement is
+   reported before and next to any edit method.
+3. Edits are learned: an edit model sees the old painting's tokens and the new attributes and writes the new painting,
+   trained on before/after pairs the data painter made from the same photo (the photo edited with its shading kept,
+   then repainted in full). Reported: how much changes outside the edit (Δ_out) and the attribute agreement.
+4. Painter-side checks only test whether the data allows a part to change alone; they are never a game method.
+
+Data-side work is not affected: the data painter may read and edit photos (that is how training data is made), and
+keeping a part's strokes in one contiguous run is a token-format choice.
+
+### 5. Brush GPT trains only on the stage painter
+
+New training, fine-tuning and initialisation use only paintings from the stage painter (`paint_stages`, now in the
+[brush-gpt](https://github.com/alina0607/brush-gpt) repo). Data and weights from the earlier digital repaint appear
+only as labelled comparisons.
+
 ## Decisions
 
 | # | Decision | Alternatives considered | Reason |

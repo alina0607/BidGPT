@@ -1,5 +1,5 @@
 """The eye model's painter (owner, 2026-10-18: a second, trained model paints the eye detail on a zoomed eye canvas, on
-top of the face model's painting; CLAUDE.md). This builds what that model would learn from: for each cat, the face
+top of the face model's painting; docs/plan.md, model rule 2). This builds what that model would learn from: for each cat, the face
 painting (the old painter's four stages, snapped to the token grid exactly as the face model learns them) rendered
 into the eye crop of tools/eye_crop_styles.py, then four eye layers fitted on top of it, in the owner's order:
 

@@ -11,7 +11,7 @@ When the player opens the shelter, eight new cats are painted one after another 
         same way (temperature 1, its own grammar) and each is laid straight onto the face canvas with its layer's
         brush as soon as its tokens are out. A plan without two eye outlines gets no eye strokes.
 
-Nothing is picked or filtered afterwards, and every cat is sampled once (sell-anything/CLAUDE.md: part models). The
+Nothing is picked or filtered afterwards, and every cat is sampled once (docs/plan.md, model rule 2). The
 game shows the painting while the models make it: with each canvas, which layer is being painted and where the last
 RECENT strokes went (L8's last three layers are fine hairs of 12-32 px a stroke, which no one sees land without a
 marker), and while the eyes are painted, the eye canvas itself (the eye model's own 256 px view of the eyes, L8's

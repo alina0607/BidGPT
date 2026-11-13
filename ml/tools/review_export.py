@@ -1,5 +1,5 @@
 """Folders for the owner's manual review (owner, 2026-10-18: maybe the model paints badly because the data is lacking;
-first look at every cat by hand). The painting is split between models (CLAUDE.md, part models): a whole-face model
+first look at every cat by hand). The painting is split between models (docs/plan.md, model rule 2): a whole-face model
 for the block-in (shape, outline, ears' shape, where the features are, big shadows) and part models for the detail
 (three: ears, eyes, nose and mouth; whether the fur is a fourth, over the whole face, or part of the three is still
 open). Each learns only from photos where its part is whole, so a photo whose ear tips are
