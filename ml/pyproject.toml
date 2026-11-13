@@ -89,6 +89,7 @@ files = [
     "sellanything_ml/buyers/sales_sft.py",
     "sellanything_ml/buyers/scenes.py",
     "sellanything_ml/buyers/schema.py",
+    "sellanything_ml/buyers/stories.py",
     "sellanything_ml/buyers/voice.py",
     "sellanything_ml/cat_buy.py",
     "sellanything_ml/datagen/__init__.py",

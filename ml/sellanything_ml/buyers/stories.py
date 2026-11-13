@@ -29,7 +29,7 @@ import re
 import time
 from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from .cat_knowledge import HELD_OUT, TOPICS, knowledge_prompt
 from .drawable import DRAWABLE
@@ -194,7 +194,7 @@ def sale_for_seed(seed: int) -> Sale:
         elif name == "no papers":
             fact = f"a purebred {c['breed'][2:] if c['breed'].startswith('a ') else c['breed']}, but never had papers"
         else:
-            fact = rng.choice(EXTRA_FACTS[name][1])
+            fact = rng.choice(cast(tuple[str, ...], EXTRA_FACTS[name][1]))     # only the two above have None
         c.setdefault("extra_kinds", []).append(name)
         c.setdefault("extra", []).append(fact)
     if seed in LIFE_SEEDS:
@@ -281,7 +281,12 @@ def add_life_facts(seed: int, c: dict[str, Any]) -> None:
 SHEDS_LITTLE = "sheds very little"
 AGAINST = {"dogs": "doesn't get on with dogs", "children": "doesn't like children",
            "cats": "doesn't get on with other cats"}
-PAIRED_SEEDS = {   # allocated once to the quotas of plan section 3, then frozen (seeds 3000-3004 are the pilot)
+# (topic, side, value, group); seeds 3050-3149 add (heard, asker) and seeds 3150-3234 also a shape (see below)
+PairedTarget = (tuple[str, str, str | None, str]
+                | tuple[str, str, str | None, str, str, str | None]
+                | tuple[str, str, str | None, str, str, str | None, str])
+PAIRED_SEEDS: dict[int, tuple[PairedTarget, ...]] = {   # allocated once to the quotas of plan section 3, then frozen
+    # (seeds 3000-3004 are the pilot)
     3000: (("shed", "B", "sheds very little", "shed1"), ("home", "B", "indoor-outdoor", "home3"),
             ("spay", "B", "not yet spayed/neutered", "spay3")),
     3001: (("vacc", "U", "recovering from a cold", "vacc1"), ("dogs", "B", "doesn't get on with dogs", "dogs1")),
@@ -1681,7 +1686,7 @@ def paired_buyers(seed: int) -> list[str]:
     return list(dict.fromkeys(need))
 
 
-def paired_months(target: tuple[str, str, str | None, str]) -> list[int]:
+def paired_months(target: PairedTarget) -> list[int]:
     """The ages (AGES_MONTHS) a target fact fits: a kitten's or an adult's health line, an adult's company, ..."""
     topic, side, value, _ = target[:4]
     shape = target[6] if len(target) > 6 else None
@@ -1761,14 +1766,14 @@ def apply_paired(seed: int, s: Sale) -> None:
         c["virus"] = by["fiv"]
     if "home" in by:
         c["home"] = by["home"]
-    company = [by[t] for t in COMPANY_TOPIC if t in by]
+    company = [cast(str, by[t]) for t in COMPANY_TOPIC if t in by]     # a company target always has a value
     taken = {_kind_of(e) for e in company}
     company += [e for e in c["company"] if _kind_of(e) not in taken][:2 - len(company)]
     if len(company) < 2:
         kind = rng.choice([k for k in sorted(COMPANY) if k not in {_kind_of(e) for e in company}])
         company.append(rng.choice(COMPANY[kind]))
     if "dog_only" in shapes:                # "Not really, but she has lived with a dog": both are on the sheet
-        company = [by["cats"], "has lived with a dog"]
+        company = [cast(str, by["cats"]), "has lived with a dog"]
     c["company"] = company
     temper = [t[2] for t in targets if t[2] in TEMPER]
     if temper:
@@ -2105,7 +2110,8 @@ def _reactions(m: Market, asker: str) -> Steps[None]:
               "example a breeder hearing she cannot be bred), not merely less attractive or not yet known (that is "
               "a lower or unchanged offer); then sign \"-\", offer 0, and name what was said and why it rules the "
               "cat out for you.\n\n")
-    todo, notes = list(m.present()), {}
+    todo = list(m.present())
+    notes: dict[str, str] = {}
     for _ in range(REACT_TRIES):
         prompts = [shared + f"{m.card_line(n)}\nWhat you have said so far:\n{m.own_lines(n)}{notes.get(n, '')}\n\n"
                    'Return {"sign": ..., "says": ..., "offer": <dollars>}.' for n in todo]
@@ -2114,10 +2120,11 @@ def _reactions(m: Market, asker: str) -> Steps[None]:
         for name, row in zip(todo, rows, strict=True):
             problem = (reaction_problem(row, m.cards[name], m.offers[name], name, last["says"])
                        if isinstance(row, dict) else "no reaction was given")
-            if problem is None:
-                m.events.append({"kind": "react", "name": name, "old": m.offers[name], "offer": int(row["offer"]),
-                                 "sign": str(row["sign"]), "says": str(row["says"])})
-                m.offers[name] = int(row["offer"])
+            if problem is None:             # so the reply is a dict
+                reply = cast(dict[str, Any], row)
+                m.events.append({"kind": "react", "name": name, "old": m.offers[name], "offer": int(reply["offer"]),
+                                 "sign": str(reply["sign"]), "says": str(reply["says"])})
+                m.offers[name] = int(reply["offer"])
             else:
                 still.append(name)
                 notes[name] = f"\n\nYour last reaction broke a rule ({problem}); write it again."
@@ -2288,7 +2295,9 @@ def _imagine(m: Market) -> Steps[None]:
               "with this cat. Mention no other object at all: no other thing from the list, and none of these, which "
               f"cannot be drawn: {', '.join(NOT_DRAWABLE)}. Two examples: {examples}. Use your own things and words; "
               "do not reuse the examples or their things unless they truly belong to your life.\n\n")
-    todo, notes, taken = list(m.present()), {}, []
+    todo = list(m.present())
+    notes: dict[str, str] = {}
+    taken: list[set[str]] = []
     for _ in range(IMAGINE_TRIES):
         prompts = [shared + f"{m.card_line(n)}\nWhat you said during the sale:\n{m.own_lines(n)}{notes.get(n, '')}"
                    '\n\nReturn {"things": [...], "says": ...}.' for n in todo]
@@ -2296,10 +2305,11 @@ def _imagine(m: Market) -> Steps[None]:
         notes, still = {}, []
         for name, row in zip(todo, rows, strict=True):
             problem = _scene_problem(row, taken)
-            if problem is None:
-                taken.append({str(x) for x in row["things"]})
-                m.events.append({"kind": "imagine", "name": name, "things": [str(t) for t in row["things"]],
-                                 "says": str(row.get("says", ""))})
+            if problem is None:             # so the reply is a dict
+                reply = cast(dict[str, Any], row)
+                taken.append({str(x) for x in reply["things"]})
+                m.events.append({"kind": "imagine", "name": name, "things": [str(t) for t in reply["things"]],
+                                 "says": str(reply.get("says", ""))})
             else:
                 still.append(name)
                 notes[name] = f"\n\nYour last answer broke a rule ({problem}); write it again."
@@ -2321,7 +2331,7 @@ def sale_steps(s: Sale, rounds: int = N_BUYERS) -> Steps[Market]:
             break
     if rounds == N_BUYERS and m.present():
         yield from _imagine(m)
-        best = max(m.present(), key=m.offers.get)
+        best = max(m.present(), key=m.offers.__getitem__)
         m.events.append({"kind": "sold", "name": best, "price": m.offers[best]})
     return m
 
