@@ -121,6 +121,7 @@ files = [
     "sellanything_ml/sketch/render.py",
     "sellanything_ml/sketch/train.py",
     "tests/test_answers.py",
+    "tests/conftest.py",
     "tests/test_augment.py",
     "tests/test_brushgpt.py",
     "tests/test_buyers.py",

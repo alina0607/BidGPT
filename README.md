@@ -1,5 +1,7 @@
 # BidGPT
 
+[![CI](https://github.com/alina0607/BidGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/alina0607/BidGPT/actions/workflows/ci.yml)
+
 > A GPT trained from scratch to play a room of buyers: each one asks about the cat for sale, hears every answer,
 > moves their offer for reasons from their own life, and says why.
 
@@ -159,6 +161,20 @@ The renderer is chosen at run time (`--backend opengl | dgl | null`); Windows/DG
 ```bash
 cd ml && python -m sellanything_ml.play dog
 ```
+
+**Development** (in `ml/`, managed with [uv](https://docs.astral.sh/uv/); `uv sync` installs the
+dev tools from `uv.lock`):
+
+```bash
+uv sync --extra train
+uv run ruff check . ../scripts   # lint
+uv run mypy                      # type check (the files listed in pyproject.toml, in batches)
+uv run pytest                    # tests
+uv run pre-commit install        # run ruff and mypy before every commit
+```
+
+GitHub Actions runs the engine build on three systems and the same three ml checks on every
+push to `main` and `dev` and on every pull request ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 **Checks**: `python scripts/check.py` runs every stage, cheapest first: lint, the Python tests,
 the C++ build, engine tests, an end-to-end round (the real game, headless, against the real server),

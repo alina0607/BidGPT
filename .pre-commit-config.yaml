@@ -1,0 +1,26 @@
+# Checks that run on every commit. Install once per clone: cd ml && uv run pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+  # Same ruff version as ml/uv.lock. --config applies ml/pyproject.toml to scripts/ too,
+  # as CI does (it runs `ruff check . ../scripts` from ml/).
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.22
+    hooks:
+      - id: ruff-check
+        args: [--config, ml/pyproject.toml]
+        files: ^(ml|scripts)/
+  # mypy runs in the ml environment (uv), so it sees the real dependencies; same command as CI.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: bash -c 'cd ml && uv run mypy'
+        language: system
+        files: ^ml/.*\.py$
+        pass_filenames: false
