@@ -25,6 +25,7 @@ import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 
@@ -65,7 +66,7 @@ def build(cats_dirs: list[Path], n_layers: int, out: Path) -> dict:
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out, tokens=np.concatenate(toks), loss_w=np.concatenate(wts), set_ids=np.concatenate(sids),
                         offsets=np.array(offs, np.int64), names=np.array(names), split=np.array(split),
-                        sets=np.array(json.dumps([sorted(s) for s in sorted(sets, key=sets.get)])),
+                        sets=np.array(json.dumps([sorted(s) for s in sorted(sets, key=sets.__getitem__)])),
                         n_layers=np.array(n_layers))
     return info
 
@@ -273,7 +274,7 @@ def load_model(path: Path, dev: str):
     model = GPT(model_config(cfg)).to(dev)
     model.load_state_dict(ck["model"])
     model.eval()
-    model.brush_cfg = cfg
+    setattr(model, "brush_cfg", cfg)
     return model
 
 
@@ -348,8 +349,9 @@ def main() -> None:
     if a.cmd == "data":
         print(json.dumps(build(a.cats, a.layers, a.out)))
     elif a.cmd == "train":
-        cfg = Config(**{k: (bool(getattr(a, k)) if isinstance(v, bool) else getattr(a, k)) for k, v in asdict(Config()).items()
-                        if k != "n_paint_layers"}, n_paint_layers=a.layers)
+        cfg = Config(**cast(dict[str, Any], {k: (bool(getattr(a, k)) if isinstance(v, bool) else getattr(a, k))
+                                             for k, v in asdict(Config()).items() if k != "n_paint_layers"}),
+                     n_paint_layers=a.layers)
         print(train(cfg, a.data))
     else:
         import torch

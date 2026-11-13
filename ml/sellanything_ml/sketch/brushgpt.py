@@ -72,7 +72,7 @@ import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
@@ -106,9 +106,9 @@ def layout(points: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     SLOTS). With `points`, the nine face points' x and y tokens come right after BOS."""
     lo, hi, slot = [T.BOS], [T.BOS], [0]
     for _ in range(POINTS if points else 0):
-        for f in ("x", "y"):
-            lo.append(T.OFFSET[f])
-            hi.append(T.OFFSET[f] + T.NXY - 1)
+        for axis in ("x", "y"):
+            lo.append(T.OFFSET[axis])
+            hi.append(T.OFFSET[axis] + T.NXY - 1)
             slot.append(len(SLOTS) - 1)
     for k, n in enumerate(STROKES):
         lo.append(T.STAGE0 + k)
@@ -536,7 +536,7 @@ class Watchdog:
 
         import torch
         self.times.append(seconds)
-        rec = {"watch": self.name, "seconds": round(seconds, 2)}
+        rec: dict[str, float | str] = {"watch": self.name, "seconds": round(seconds, 2)}
         if dev == "cuda":
             rec["mem_gb"] = round(torch.cuda.memory_allocated() / 2**30, 2)
             rec["max_mem_gb"] = round(torch.cuda.max_memory_allocated() / 2**30, 2)
@@ -640,13 +640,13 @@ def train(cfg: Config, data: Path = DATA_FILE, run_dir: Path = RUN_DIR) -> Path:
     has_points = train_pts is not None                  # False for token files made before the points were stored
     if not has_points and (cfg.points or cfg.eye_weight != 1):
         raise ValueError(f"{data} has no face points: --points and --eye-weight need them")
-    val_eyes = eye_strokes(val_rows, load_points(data, "val")) if has_points else None
+    val_eyes = eye_strokes(val_rows, cast(np.ndarray, load_points(data, "val"))) if has_points else None
     if cfg.mirror:
         train_rows = np.concatenate([train_rows, load_rows(data, "train", cfg.cats, cfg.order, mirrored=True,
                                                            points=cfg.points)[0]])
         if has_points:
             train_pts = np.concatenate([train_pts, load_points(data, "train", cfg.cats, mirrored=True)])
-    weights = (loss_weights(train_rows, train_pts, cfg.eye_weight, cfg.eye_weight_position) if has_points
+    weights = (loss_weights(train_rows, cast(np.ndarray, train_pts), cfg.eye_weight, cfg.eye_weight_position) if has_points
                else np.ones(train_rows.shape, np.float32))
     mask = allowed(dev, cfg.points) if cfg.heads else None
     torch.manual_seed(cfg.seed)
@@ -737,7 +737,7 @@ def load_model(path: Path, dev: str = "cpu") -> "GPT":
     st = torch.load(path, map_location="cpu", weights_only=False)
     model = GPT(model_config(Config(**st["config"])))
     model.load_state_dict(st["model"])
-    model.brush_cfg = Config(**st["config"])                  # sample() reads `heads` from it
+    setattr(model, "brush_cfg", Config(**st["config"]))       # sample() reads `heads` from it
     return model.to(dev).eval()
 
 

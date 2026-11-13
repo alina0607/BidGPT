@@ -42,6 +42,8 @@ import os
 import sys
 import threading
 import time
+from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 
@@ -80,7 +82,8 @@ class FaceStrokes:
 
     def __init__(self) -> None:
         self.layer_tok = {L.SP[f"LAYER{j}"]: j for j in range(L.MAX_LAYERS)}
-        self.layer, self.buf = -1, []
+        self.layer = -1
+        self.buf: list[int] = []
 
     def step(self, tok: int):
         if tok in self.layer_tok:
@@ -104,7 +107,8 @@ class EyeStrokes:
         self.layer_tok = {sp[f"LAYER{j}"]: j for j in range(vocab.n_layers)}
         self.next, self.end = sp["EYE_NEXT"], sp["LAYER_END"]
         self.centres = EG.eye_centres(plan, vocab) if vocab.coords == "polar" else None
-        self.layer, self.eye, self.buf = -1, 0, []
+        self.layer, self.eye = -1, 0
+        self.buf: list[int] = []
 
     def step(self, tok: int):
         if tok in self.layer_tok:
@@ -133,7 +137,9 @@ class Layers:
 
     def __init__(self, canvas, paint, blend) -> None:
         self.canvas, self.paint, self.blend = canvas, paint, blend
-        self.layer, self.before, self.items = None, canvas, []
+        self.layer: int | None = None
+        self.before = canvas
+        self.items: list = []
 
     def add(self, layer: int, item):
         if layer != self.layer:
@@ -162,36 +168,39 @@ class ShelterPainter:
         self.eye_dir = None if eye_run is None else EG.RUN_DIR / eye_run
         self.face_run, self.eye_run = face_run, eye_run
         self.device = device or os.environ.get("SHELTER_DEVICE", "cpu")
-        self._face = self._eye = self._brushes = None
+        self._face: Any = None
+        self._eye: Any = None
+        self._brushes: list[dict[str, Any]] | None = None
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._go = threading.Event()         # set while painting may go on (cleared by pause)
         self._go.set()
-        self.record_dir = None
+        self.record_dir: Path | None = None
         self.run = 0
         self._clear()
 
     def _clear(self) -> None:
-        self.frames = [None] * CATS          # (SIDE, SIDE, 3) uint8: each cat as painted so far
+        self.frames: list[np.ndarray | None] = [None] * CATS          # (SIDE, SIDE, 3) uint8: each cat as painted so far
         self.strokes = [0] * CATS            # strokes laid on each canvas (face and eyes)
         self.eye_strokes = [0] * CATS        # of which the eye model's
         self.phases = ["waiting"] * CATS     # waiting, face, eyes, done
-        self.layers = [None] * CATS          # (name, 1-based index, number of layers) being painted
-        self.recent = [[] for _ in range(CATS)]   # the last RECENT strokes' centres, on the canvas being shown
-        self.eye_frames = [None] * CATS      # (256, 256, 3) uint8: the eye canvas, once the eyes are painted
-        self.eye_boxes = [None] * CATS       # where the eye canvas is on the face canvas (face px x0, y0, x1, y1)
+        self.layers: list[tuple | None] = [None] * CATS          # (name, 1-based index, number of layers) being painted
+        self.recent: list[list] = [[] for _ in range(CATS)]   # the last RECENT strokes' centres, on the canvas being shown
+        self.eye_frames: list[np.ndarray | None] = [None] * CATS      # (256, 256, 3) uint8: the eye canvas, once the eyes are painted
+        self.eye_boxes: list[tuple | None] = [None] * CATS       # where the eye canvas is on the face canvas (face px x0, y0, x1, y1)
         self.versions = [0] * CATS           # bumped on every change, so an unchanged canvas is not sent again
-        self.seconds = [None] * CATS         # how long each finished cat took
-        self.tokens = [None] * CATS          # each finished cat's (face tokens, eye tokens or None)
+        self.seconds: list[float | None] = [None] * CATS         # how long each finished cat took
+        self.tokens: list[tuple | None] = [None] * CATS          # each finished cat's (face tokens, eye tokens or None)
         self.current = 0                     # the cat being painted (CATS once all are done)
-        self.cat_start = [None] * CATS       # each cat's start and end on the run's clock (pauses left out)
-        self.cat_end = [None] * CATS
-        self.paused_total, self.paused_at = 0.0, None
+        self.cat_start: list[float | None] = [None] * CATS       # each cat's start and end on the run's clock (pauses left out)
+        self.cat_end: list[float | None] = [None] * CATS
+        self.paused_total = 0.0
+        self.paused_at: float | None = None
         self._files: dict = {}
         self.started = time.time()
-        self.total_seconds = None
-        self.error = None
+        self.total_seconds: float | None = None
+        self.error: str | None = None
 
     def models(self):
         if self._face is None:
@@ -209,9 +218,10 @@ class ShelterPainter:
         return now - self.started - self.paused_total - (now - self.paused_at if self.paused_at is not None else 0.0)
 
     def cat_seconds(self, k: int) -> float | None:
-        if self.cat_start[k] is None:
+        start, end = self.cat_start[k], self.cat_end[k]
+        if start is None:
             return None
-        return (self.cat_end[k] if self.cat_end[k] is not None else self.clock()) - self.cat_start[k]
+        return (end if end is not None else self.clock()) - start
 
     def pause(self, on: bool) -> None:
         """Holds the painting before its next token (on) or lets it go on; a pause also saves what is shown."""
@@ -234,15 +244,15 @@ class ShelterPainter:
             return
         from PIL import Image
         k = min(self.current, CATS - 1)
-        info = {"run": self.run, "cat": k + 1, "cat_seconds": None if self.cat_seconds(k) is None else round(self.cat_seconds(k), 2),
+        info = {"run": self.run, "cat": k + 1, "cat_seconds": None if self.cat_seconds(k) is None else round(cast(float, self.cat_seconds(k)), 2),
                 "phase": self.phases[k], "layer": self.layers[k], "strokes": self.strokes[k],
                 "eye_strokes": self.eye_strokes[k], "at": datetime.datetime.now().isoformat(timespec="seconds")}
         (self.record_dir / "paused.json").write_text(json.dumps(info, ensure_ascii=False, indent=1) + "\n")
         if self.frames[k] is not None:
-            Image.fromarray(self.frames[k]).save(self.record_dir / "paused.png")
+            Image.fromarray(cast(np.ndarray, self.frames[k])).save(self.record_dir / "paused.png")
         eyes = self.record_dir / "paused_eyes.png"
         if self.phases[k] == "eyes" and self.eye_frames[k] is not None:
-            Image.fromarray(self.eye_frames[k]).save(eyes)
+            Image.fromarray(cast(np.ndarray, self.eye_frames[k])).save(eyes)
         elif eyes.exists():
             eyes.unlink()
 
@@ -302,18 +312,20 @@ class ShelterPainter:
                    "version": self.versions[cat], "seconds": [s for s in self.seconds if s is not None],
                    "elapsed": round(self.clock(), 2), "total_seconds": self.total_seconds,
                    "paused": self.paused_at is not None,
-                   "cat_seconds": None if self.cat_seconds(cat) is None else round(self.cat_seconds(cat), 2),
+                   "cat_seconds": None if self.cat_seconds(cat) is None else round(cast(float, self.cat_seconds(cat)), 2),
                    "record": None if self.record_dir is None else str(self.record_dir)}
-            if self.layers[cat]:
-                out.update(layer=self.layers[cat][0], layer_index=self.layers[cat][1], layers=self.layers[cat][2])
+            layer = self.layers[cat]
+            if layer:
+                out.update(layer=layer[0], layer_index=layer[1], layers=layer[2])
             if self.error:
                 out["error"] = self.error
             frame = self.frames[cat]
             if frame is not None and self.versions[cat] != have_version:
                 out.update(width=B.SIDE, height=B.SIDE, image=base64.b64encode(frame.tobytes()).decode())
-                if self.eye_frames[cat] is not None:
-                    out.update(eye_image=base64.b64encode(self.eye_frames[cat].tobytes()).decode(),
-                               eye_box=[round(float(v), 2) for v in self.eye_boxes[cat]])
+                eye_frame = self.eye_frames[cat]
+                if eye_frame is not None:          # set together with its box
+                    out.update(eye_image=base64.b64encode(eye_frame.tobytes()).decode(),
+                               eye_box=[round(float(v), 2) for v in cast(tuple, self.eye_boxes[cat])])
         return out
 
     def _paint_all(self, run: int, seed: int, stop: threading.Event) -> None:
@@ -335,7 +347,7 @@ class ShelterPainter:
                     self.tokens[k] = (face[0], eyes)
                     self.phases[k] = "done"
                     self.cat_end[k] = self.clock()
-                    self.seconds[k] = round(self.cat_end[k] - self.cat_start[k], 2)
+                    self.seconds[k] = round(cast(float, self.cat_end[k]) - cast(float, self.cat_start[k]), 2)
                     self.current = k + 1
                     self.versions[k] += 1
                 self._finish(k, face[0], eyes)
@@ -404,7 +416,7 @@ class ShelterPainter:
         _, model = self.models()
         if model is None or len(L.decode_plan(tokens)["eyes"]) != 2:
             return None
-        vocab, brushes = model.vocab, self._brushes
+        vocab, brushes = model.vocab, cast(list[dict[str, Any]], self._brushes)     # loaded with the eye model
         box = EG.plan_box(tokens)
         base = ELL.l8_on_crop(tokens, EG.FACE_BOX, tuple(box))
         pix = EG.patches((base * 255).round().astype(np.uint8))[None]
@@ -464,7 +476,7 @@ class ShelterPainter:
         np.savez_compressed(self.record_dir / f"cat{k + 1}_tokens.npz", face=face,
                             eyes=np.zeros(0, np.int64) if eyes is None else eyes)
         with self._lock:
-            Image.fromarray(self.frames[k]).save(self.record_dir / f"cat{k + 1}.png")
+            Image.fromarray(cast(np.ndarray, self.frames[k])).save(self.record_dir / f"cat{k + 1}.png")
 
     def _show(self, k: int, run: int, canvas, laid: int, phase: str, layer: tuple | None = None, xy=None,
               eye_laid: int = 0, recent: list | None = None, eye: tuple | None = None) -> None:
@@ -485,6 +497,6 @@ class ShelterPainter:
             if xy is not None:
                 self.recent[k] = (self.recent[k] + [[round(float(xy[0]), 1), round(float(xy[1]), 1)]])[-RECENT:]
             if crop is not None:
-                self.eye_frames[k], self.eye_boxes[k] = crop, eye[1]
+                self.eye_frames[k], self.eye_boxes[k] = crop, cast(tuple, eye)[1]
             self.phases[k] = phase
             self.versions[k] += 1

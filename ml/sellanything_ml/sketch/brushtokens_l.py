@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from collections.abc import Set as AbstractSet
 from typing import Any, cast
 
 import numpy as np
@@ -334,7 +335,7 @@ def group_of(tok: int) -> str:
     raise ValueError(f"token {tok} out of the vocabulary")
 
 
-def token_mask(groups: set[str]) -> np.ndarray:
+def token_mask(groups: AbstractSet[str]) -> np.ndarray:
     """Boolean (VOCAB,) of the token ids in the given groups."""
     m = np.zeros(VOCAB, bool)
     for g in groups:
