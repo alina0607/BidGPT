@@ -443,6 +443,10 @@ CUE_OPTIONS = {   # the families the targets of one value take in turn, by seed 
     "microchipped": ("plain", "no"), "not microchipped": ("not", "frag"),
     "found as a stray and never claimed": ("never", "never"),
 }
+CUE_OPTIONS_HEARD = {   # 3050 on (more targets per value): keep one word under 40% of a topic (plan 3.2)
+    "loves being picked up and carried": ("nt", "no", "plain"), "bloodwork last month was normal": ("no", "nt", "plain"),
+    "found as a stray and never claimed": ("never", "no"),
+}
 GOOD_NEWS = {   # (topic, side): good for most buyers ("+"), bad ("-"), or neither (plan 4.3 counts + and -)
     ("shed", "A"): "-", ("shed", "B"): "+", ("spay", "A"): "+", ("spay", "B"): "-", ("vacc", "A"): "+",
     ("vacc", "B"): "-", ("fiv", "A"): "+", ("fiv", "B"): "-", ("kids", "A"): "+", ("kids", "B"): "-",
@@ -545,6 +549,9 @@ TAKE = {   # (topic, side): how the buyers the target turns take it (plan 3.1, l
     ("senior", "B"): "every buyer lowers once (the vet bills or the tests it needs)",
     ("papers", "B"): "a breeder withdraws (no registration); a buyer who prizes pedigree lowers once; everyone else keeps",
     ("papers", "U"): "nobody moves: each buyer keeps and says how they will find out (ask for the breeder's papers)",
+}
+TAKE_HEARD = {   # 3050 on: sides TAKE leaves to the life-fact rule, said in the target's own row
+    ("litter", "A"): "nobody moves: fully litter trained is what every buyer expects, so they keep",
 }
 FLIP_SIGNS = {   # (topic, side): {persona: the sign plan 3.1 asks for}; check_cues.py lists the other signs to read
     ("shed", "A"): {"is allergic and worried about fur": "-"}, ("shed", "B"): {"is allergic and worried about fur": "+"},
@@ -659,9 +666,12 @@ def cue_plan(seeds: list[int]) -> dict:
         s = S.sale_for_seed(seed)
         c, rng = s["cat"], random.Random(seed * 7 + 3)
         targets = []
-        for topic, side, value, group in S.PAIRED_SEEDS[seed]:
+        persona_name = {x["persona"]: x["name"] for x in s["buyers"]}
+        for entry in S.PAIRED_SEEDS[seed]:
+            topic, side, value, group = entry[:4]
             key = value if value in CUE_OPTIONS else (topic, side)
-            family = CUE_OPTIONS[key][turn.get(key, 0) % len(CUE_OPTIONS[key])]
+            options = CUE_OPTIONS_HEARD.get(key, CUE_OPTIONS[key]) if seed >= S.HEARD_FROM else CUE_OPTIONS[key]
+            family = options[turn.get(key, 0) % len(options)]
             turn[key] = turn.get(key, 0) + 1
             words, not_words = SIDE_WORDS[(topic, side)]
             targets.append({
@@ -673,6 +683,14 @@ def cue_plan(seeds: list[int]) -> dict:
                          + S.PAIRED_GROUP_BUYERS.get(group, ())],
                 "expect": FLIP_SIGNS.get((topic, side), {}), "topic_words": TOPIC_WORDS[topic],
                 "side_words": words, "not_words": not_words})
+            if len(entry) > 4:              # 3050 on: how the buyers it turns hear it, and who asks
+                if (topic, side) in TAKE_HEARD:         # a side that turns nobody (found writing 3053)
+                    targets[-1]["flip"] = []
+                asker = S.BUYER[entry[5]] if entry[5] else None
+                targets[-1].update({"heard": entry[4], "asker": asker, "asker_name": persona_name.get(asker)})
+        if seed in S.PAIRED_BUTS:
+            plan[str(seed)] = _heard_entry(seed, s, targets, members)
+            continue
         said = {t[2] for t in S.PAIRED_SEEDS[seed]}
         free = [f for f in sheet_facts(c) if f not in said]
         kind = max((k for k in CONTROLS if left[k] and _control_fits(k, free)),      # the kind least used so far
@@ -694,6 +712,23 @@ def cue_plan(seeds: list[int]) -> dict:
     return {"held_out": list(HELD_OUT_WORDS), "held_out_pattern": HELD_OUT_PATTERN,
             "families": {k: v[0] for k, v in CUE_FAMILIES.items()}, "control_words": CONTROL_WORDS, "yes": YES,
             "fragment": CUE_FAMILIES["frag"][0], "stop": sorted(S.STOP), "allowed": _sheet_phrases(), "seeds": plan}
+
+
+def _heard_entry(seed: int, s: dict, targets: list[dict], members: dict[str, list[int]]) -> dict:
+    """A 3050-on seed's cue plan: its targets, and the control and two "but" answers stories.py froze for it."""
+    names = {x["persona"]: x["name"] for x in s["buyers"]}
+    kind, facts = S.PAIRED_CONTROLS[seed]
+    control = {"kind": kind, "facts": list(facts), "fact_words": [fact_words(f) for f in facts],
+               "words": CONTROL_WORDS[kind]}
+    buts = []
+    for but_kind, connector, heard, asker, up, down, but_facts in S.PAIRED_BUTS[seed]:
+        who = {k: S.BUYER[v] if v else None for k, v in (("asker", asker), ("up", up), ("down", down))}
+        buts.append({"kind": but_kind, "connector": connector, "heard": heard, "facts": list(but_facts),
+                     "fact_words": [fact_words(f) for f in but_facts],
+                     **who, **{f"{k}_name": names.get(v) for k, v in who.items()}})
+    return {"targets": targets, "control": control, "buts": buts,
+            "pair_with": {t["group"]: [x for x in members[t["group"]] if x != seed] for t in targets},
+            "buyers": S.paired_buyers(seed), "names": {x["name"]: x["persona"] for x in s["buyers"]}, "fragments": 2}
 
 
 def _sheet_phrases() -> list[str]:
@@ -740,19 +775,68 @@ def _said(t: dict) -> str:
     return t["value"]
 
 
+def _heard(t: dict) -> str:
+    """Who asks a 3050-on target, and how the buyers it turns hear it (plan section 2)."""
+    if "heard" not in t:
+        return ""
+    if t["heard"] == "self":
+        if t["asker"] and not t["flip"]:
+            return f" Heard: asked by {t['asker_name']} ({t['asker']})."
+        return (f" Heard: asked by {t['asker_name']} ({t['asker']}), a buyer it turns." if t["asker"]
+                else " Heard: asked by a buyer it moves.")
+    if t["heard"] == "other":
+        return (f" Heard: asked by {t['asker_name']} ({t['asker']}), not by a buyer it turns: {t['asker_name']}'s "
+                "card or greeting gives a reason to ask it (item 43). The buyers it turns still move as 'How "
+                "buyers take it' says and say what they heard (item 42).")
+    return (" Heard: said inside the answer to a question about something else: the seller first answers that "
+            "question, then adds this fact as its own sentence, with the small word in that sentence's first six "
+            "words. The buyers it turns still move as 'How buyers take it' says and say what they heard (item 42).")
+
+
+BUT_KINDS = {   # plan 3.4: what each kind of "but" answer says, and an example about another cat (do not copy)
+    "good but bad": ("the good fact first, then the bad one", '"Fully vaccinated, but no microchip."'),
+    "bad but good": ("the bad fact first, then the good one", '"She\'s not spayed, but her shots are all done."'),
+    "fragment": (("the first fact as a player's fragment at the very start (nah, nope, not really, no), then the "
+                  "other one"), '"nah not with kids, but dogs fine" / "no papers tho, she\'s purebred"'),
+    "caveat": (("this one fact, said with its own turn in the middle; the part after the connector decides the "
+                "direction"), '"She sheds a bit, but only in spring."'),
+}
+
+
+def _but_row(k: int, b: dict) -> str:
+    """One "but" answer of a 3050-on prompt: its facts, its connector, who asks and the buyers its halves move."""
+    what, example = BUT_KINDS[b["kind"]]
+    facts = " / ".join(b["facts"])
+    asked = (f"asked by {b['asker_name']} ({b['asker']}), who is neither of the buyers below" if b["heard"] == "other"
+             else f"asked by {b['asker_name']} ({b['asker']})")
+    moved = (f"{b['up_name']} ({b['up']}) raises for the good half and {b['down_name']} ({b['down']}) lowers for the bad "
+             "half, so a buyer who reads only one half gets it wrong" if b["up"]
+             else f"{b['down_name']} ({b['down']}) lowers for the part after the connector")
+    return (f"{k}. **{facts}** ({b['kind']}: {what}), joined with \"{b['connector']}\"; {asked}. {moved}; every "
+            f"other buyer reacts to each half that concerns them. Example (another cat): {example}")
+
+
 def cues(seed: int, entry: dict) -> str:
     """The section of one paired seed's prompt that says which small words its answers use (plan 2.2, 3, 4, 5.1)."""
     rows = []
     for k, t in enumerate(entry["targets"], 1):
         flip = f" Buyers it turns: the one who {'; the one who '.join(t['flip'])}." if t["flip"] else ""
-        take = TAKE.get((t["topic"], t["side"]))
-        rows.append(f"{k}. **{_said(t)}**. Small word: {CUE_FAMILIES[t['cue']][1]}"
-                    + ("" if t["cue"] == "plain" else ", within the answer's first six words")
-                    + f". Form: {FORMS[t['form']]}.{flip}" + (f" How buyers take it: {take}." if take else ""))
+        take = TAKE.get((t["topic"], t["side"])) or (TAKE_HEARD.get((t["topic"], t["side"])) if "heard" in t else None)
+        front = (", within the first six words of the sentence that says it" if t.get("heard") == "inside"
+                 else ", within the answer's first six words")
+        word = CUE_FAMILIES[t["cue"]][1]
+        if t.get("heard") == "inside":
+            word = word.replace("at the very start", "at the start of its sentence")
+        rows.append(f"{k}. **{_said(t)}**. Small word: {word}"
+                    + ("" if t["cue"] == "plain" else front)
+                    + f". Form: {FORMS[t['form']]}.{flip}" + (f" How buyers take it: {take}." if take else "")
+                    + _heard(t))
     control = entry["control"]
     _, what, example = CONTROLS[control["kind"]]
-    contrast = entry["contrast"]
     pairs = "; ".join(f"{g}: {', '.join(map(str, v))}" for g, v in entry["pair_with"].items())
+    if "buts" in entry:
+        return _heard_cues(entry, rows, what, example, pairs)
+    contrast = entry["contrast"]
     return f'''
 
 ## This sale's small words (added 2026-10-29; checked by check_cues.py, read by the reviewer)
@@ -784,6 +868,51 @@ kept out of training to test the model on them): {", ".join(HELD_OUT_WORDS)}.
 **F. Buyers.** Every greeting ends with the kind of cat the buyer wants, following from the life it tells ("I sand
 every boat hull I sell until it shines, and I'd like a cat kept with the same care", not "I'm a plumber, so I want a
 healthy cat").
+"So", "since" and "because" join only a real cause. A buyer with dogs or an older cat at home, hearing about
+vaccines, FIV, fleas, dogs or other cats, says what it means for their own animal by the name from their greeting
+(not a stock line like "Kitten shots are normal").
+'''
+
+
+def _heard_cues(entry: dict, rows: list[str], what: str, example: str, pairs: str) -> str:
+    """The small-words section of a 3050-on prompt (data/written_sales/prompts_3050_plan.md): who hears each target,
+    and two "but" answers whose halves move two buyers opposite ways."""
+    control = entry["control"]
+    buts = "\n".join(_but_row(k, b) for k, b in enumerate(entry["buts"], 1))
+    return f'''
+
+## This sale's small words and who hears them (added 2026-10-31; checked by check_cues.py, read by the reviewer)
+
+Why: the buyer model reads the topic of an answer but not its small words ("not", "never", "but"), and when another
+buyer asks, it leaves the buyer the answer is about on keep: "She doesn't like children" moved the parent when the
+parent asked, and nobody when someone else asked. In the game nine buyers of ten hear every answer to someone else's
+question. Paired sales ({pairs}) carry the same topic with the opposite meaning.
+
+**A. Target answers.** Each says exactly this side of the fact and nothing more (no detail the sheet does not give:
+not how she gets on badly, not why), and puts the small word within the first six words: "Not microchipped, sorry",
+not "She came to me from a farm and she's not microchipped" (older answers are cut from the end in the buyer's prompt,
+so a late small word can be lost). The note keeps the same small word. "Heard" says who asks: a buyer it turns hears
+it the same way whoever asks, and moves as "How buyers take it" says, naming what they heard ("Hearing she doesn't like
+children, ..."). Good news moves them as surely as bad news: a raise for good news is never left on keep (item 44).
+{chr(10).join(rows)}
+
+**B. One control answer ({control["kind"]}): a negation that does NOT turn the direction.** Write {what}, about:
+{"; ".join(control["facts"])}. Example (another cat; do not copy): "{example}" Every buyer reacts exactly as they would
+to the plain fact: never lower because the sentence has "not", "no" or "never" in it.
+
+**C. Two answers that join two sides with "but", "though" or "tho"** (each in its own round, the connector as given).
+Each says only sheet facts, and every buyer reacts to each half that concerns them (item 2):
+{buts}
+
+**D. Player fragments.** At least two answers start the way players type: "Not really, but ...", "nope, not yet",
+"dunno tbh", "yea all shots done" (a fragment target or "but" answer above counts).
+
+**E. Never use these words anywhere in the sale** (no answer, question, note, reaction, scene or decision; they are
+kept out of training to test the model on them): {", ".join(HELD_OUT_WORDS)}.
+
+**F. Buyers.** Every greeting ends with the kind of cat the buyer wants, following from the life it tells ("I sand
+every boat hull I sell until it shines, and I'd like a cat kept with the same care", not "I'm a plumber, so I want a
+healthy cat"). A buyer named above as asking something says in their greeting the life detail that makes them ask it.
 "So", "since" and "because" join only a real cause. A buyer with dogs or an older cat at home, hearing about
 vaccines, FIV, fleas, dogs or other cats, says what it means for their own animal by the name from their greeting
 (not a stock line like "Kitten shots are normal").

@@ -32,20 +32,22 @@ def _digest(seeds) -> str:
 def test_every_other_seed_draws_exactly_what_it_drew_before():
     # recorded 2026-10-29 before PAIRED_SEEDS was added
     assert _digest(range(3000)) == "7d65b084c29b9ef5ed149c59843a8b1fade823d8b54701c469855f4e7bbd699f"
-    assert _digest(range(3050, 3300)) == "a9740bd988e7c142bc06d46262eee1b7efb4deb3d02c9c51007945ddee05e2e6"
+    # 3050-3149 became paired seeds on 2026-10-31 (test_heard_3050.py); the seeds after them recorded before that
+    assert _digest(range(3150, 3300)) == "d6846b0aa164e4e7cf1a0150a571be2ea63a3dda204531462db8248aa9677a22"
 
 
 def test_the_new_values_are_never_drawn_at_random():
     new = {S.SHEDS_LITTLE, *S.AGAINST.values()}
-    for seed in [*range(2000, 3000), *range(3050, 3300)]:
+    for seed in [*range(2000, 3000), *range(3150, 3300)]:      # 3050-3149 are paired (test_heard_3050.py)
         assert not new & set(E.sheet_facts(S.sale_for_seed(seed)["cat"])), seed
 
 
 def test_paired_seeds_are_the_fifty_of_the_plan_with_the_quotas_of_section_3():
-    assert sorted(S.PAIRED_SEEDS) == list(PAIRED)
-    targets = [t for ts in S.PAIRED_SEEDS.values() for t in ts]
+    batch = {seed: ts for seed, ts in S.PAIRED_SEEDS.items() if seed < S.HEARD_FROM}
+    assert sorted(batch) == list(PAIRED)
+    targets = [t for ts in batch.values() for t in ts]
     assert len(targets) == 122
-    assert all(2 <= len(ts) <= 3 for ts in S.PAIRED_SEEDS.values())
+    assert all(2 <= len(ts) <= 3 for ts in batch.values())
     sides = Counter((t[0], t[1]) for t in targets)
     plan = {"shed": (5, 5, 2), "spay": (4, 8, 0), "age": (4, 4, 0), "vacc": (3, 3, 2), "fiv": (3, 3, 2),
             "kids": (3, 3, 2), "dogs": (3, 3, 2), "cats": (2, 2, 2), "clingy": (3, 3, 0), "scratch": (3, 3, 0),
@@ -55,7 +57,7 @@ def test_paired_seeds_are_the_fifty_of_the_plan_with_the_quotas_of_section_3():
         assert (sides[(topic, "A")], sides[(topic, "B")], sides[(topic, "U")]) == (a, b, u), topic
     assert sides[("origin", "C")] == 2
     by_group: dict[str, list[int]] = {}
-    for seed, ts in S.PAIRED_SEEDS.items():
+    for seed, ts in batch.items():
         assert len({t[0] for t in ts}) == len(ts), seed                 # one target per topic in a sale
         for t in ts:
             by_group.setdefault(t[3], []).append(seed)
@@ -74,12 +76,12 @@ def _field(c, topic, side, value):
     return value in E.sheet_facts(c)
 
 
-@pytest.mark.parametrize("seed", PAIRED)
+@pytest.mark.parametrize("seed", [*PAIRED, *range(3050, 3150)])
 def test_each_paired_sheet_has_its_targets_and_agrees_with_itself(seed):
     s = S.sale_for_seed(seed)
     c = s["cat"]
-    for topic, side, value, _ in S.PAIRED_SEEDS[seed]:
-        assert _field(c, topic, side, value), (topic, side, value)
+    for t in S.PAIRED_SEEDS[seed]:
+        assert _field(c, *t[:3]), t
     stage = S.HEALTH_KITTEN if c["months"] < 12 else S.HEALTH_SENIOR if c["months"] > 120 else S.HEALTH_ADULT
     assert c["health"] in stage
     assert c["age"] == S._age(c["months"]) and c["months"] in S.AGES_MONTHS

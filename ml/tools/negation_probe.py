@@ -11,6 +11,11 @@ answers right, pairs of answers with different directions both right, and those 
 probabilities the right way. Three baselines that read no small word (or only a negation word) are printed with it:
 a model that does not beat them has learned a shortcut.
 
+Each answer is scored twice (data/written_sales/prompts_3050_plan.md section 5, owner 2026-10-31): as before, with
+another buyer ("Sam asked") putting the question, and with the tested buyer asking it themselves ("You asked"). In the
+second, a buyer the topic does not concern (a group whose answers all want 0, such as a student hearing about
+children) still hears Sam ask, as in a real sale they would not ask it.
+
     cd ml && python3 tools/negation_probe.py                         # the pre-trained model and B5
     cd ml && python3 tools/negation_probe.py runs/sft_b6/best.pt     # any checkpoints
     cd ml && python3 tools/negation_probe.py --baselines             # the trap test's baselines only, no model
@@ -262,17 +267,29 @@ def text_logp(net, tok, context, conclusion):
     return sum(logp[i - 1, full[i]].item() for i in range(len(c), len(full)))
 
 
-def sale_signs(net, tok, persona, cares, greeting, question, answer):
-    """The probabilities of the three direction signs for this buyer's reaction to the answer."""
+TESTED = "Robin"                # the buyer under test; "You asked" when the question is theirs
+OTHER = "Sam"                   # the buyer who asks in the original trap test
+
+
+def own_askers(items: list[dict]) -> list[str]:
+    """Who asks each item in the own-question scoring: the tested buyer, except in a group whose answers all want 0
+    (a buyer the topic does not concern), where Sam still asks."""
+    moves = {i["group"] for i in items if i["want"] != "0"}
+    return [TESTED if i["group"] in moves else OTHER for i in items]
+
+
+def sale_signs(net, tok, persona, cares, greeting, question, answer, asker=OTHER):
+    """The probabilities of the three direction signs for this buyer's reaction to the answer, the question asked by
+    `asker` (TESTED: the buyer themselves)."""
     import torch
 
     from sellanything_ml.buyers.format import REACT
     from sellanything_ml.buyers.sales_sft import Story, animal, buyer_prompt, card
-    s = Story("Robin")
+    s = Story(TESTED)
     s.opening = f"Your opening ($70): {greeting}"
-    s.asked("Sam", question)
+    s.asked(asker, question)
     s.rounds[-1].append(f"Seller: {answer}")
-    p = buyer_prompt(card("Robin", {"persona": persona, "cares_about": cares}, 70, net.prompt_format), s.text(live=True),
+    p = buyer_prompt(card(TESTED, {"persona": persona, "cares_about": cares}, 70, net.prompt_format), s.text(live=True),
                      REACT, animal(net.prompt_format))
     with torch.no_grad():
         logits, _ = net(torch.tensor([tok.encode(p)]))
@@ -307,10 +324,19 @@ def sale_pairs(net, tok, label):
 
 
 def trap(net, tok, label, items):
-    """The trap test on one checkpoint."""
+    """The trap test on one checkpoint: Sam asks (as before), then the tested buyer asks (own_askers)."""
     probs = [sale_signs(net, tok, i["persona"], i["cares_about"], i["greeting"], i["question"], i["answer"])
              for i in items]
-    report(f"{label} on the trap test ({len(items)} answers)", score(items, probs))
+    report(f"{label} on the trap test ({len(items)} answers), Sam asked", score(items, probs))
+    askers = own_askers(items)
+    own = [sale_signs(net, tok, i["persona"], i["cares_about"], i["greeting"], i["question"], i["answer"], a)
+           if a == TESTED else p for i, a, p in zip(items, askers, probs, strict=True)]
+    report(f"{label} on the trap test, the tested buyer asked ({askers.count(TESTED)} answers; the "
+           f"{askers.count(OTHER)} of groups that all want 0 still Sam asked)", score(items, own))
+    moving = [k for k, a in enumerate(askers) if a == TESTED]
+    sub = [items[k] for k in moving]
+    for name, ps in (("Sam asked", probs), ("the tested buyer asked", own)):
+        report(f"{label}, only the {len(sub)} answers of groups that move, {name}", score(sub, [ps[k] for k in moving]))
 
 
 def main() -> None:
