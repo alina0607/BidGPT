@@ -73,7 +73,8 @@ class Tokenizer:
 
     def decode(self, ids: list[int]) -> str:
         """Token ids → text, the exact inverse of `encode` (normalization is off, so round trips are exact)."""
-        out, run = [], []
+        out: list[str] = []
+        run: list[int] = []
         for i in ids:
             if i in self.extra_text:
                 out.append(self.sp.decode(run))

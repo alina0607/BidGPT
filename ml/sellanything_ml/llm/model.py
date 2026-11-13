@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 import torch
 import torch.nn.functional as F
@@ -82,6 +82,16 @@ def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.T
     return torch.stack((x1 * cos - x2 * sin, x1 * sin + x2 * cos), dim=-1).flatten(-2)
 
 
+
+class KVCache(TypedDict, total=False):
+    """One block's generation cache: K and V so far; with preallocation also the buffer length and the
+    number of positions written."""
+    k: torch.Tensor
+    v: torch.Tensor
+    size: int
+    n: int
+
+
 class Attention(nn.Module):
     """Causal self-attention with rotary positions and grouped-query heads (n_kv_heads ≤ n_heads)."""
 
@@ -93,7 +103,7 @@ class Attention(nn.Module):
         self.out = nn.Linear(cfg.n_heads * cfg.head_dim, cfg.d_model, bias=False)
 
     def forward(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
-                cache: dict[str, torch.Tensor | int] | None = None) -> torch.Tensor:
+                cache: KVCache | None = None) -> torch.Tensor:
         """x (B, T, d) → (B, T, d). With a cache (generation), K/V of earlier steps are reused."""
         B, T, _ = x.shape
         c = self.cfg
@@ -114,7 +124,7 @@ class Attention(nn.Module):
         return self.out(y.transpose(1, 2).reshape(B, T, -1))
 
     @staticmethod
-    def _extend(cache: dict[str, torch.Tensor | int], k: torch.Tensor,
+    def _extend(cache: KVCache, k: torch.Tensor,
                 v: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """K/V of every step so far. With cache["size"] (generate(preallocate=True)) each step writes into
         buffers of that length; otherwise the cache grows by concatenation, which copies all of it every step:
@@ -167,7 +177,7 @@ class Block(nn.Module):
         self.mlp = SwiGLU(cfg)
 
     def forward(self, x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
-                cache: dict[str, torch.Tensor | int] | None = None) -> torch.Tensor:
+                cache: KVCache | None = None) -> torch.Tensor:
         """x + attention(norm(x)), then + MLP(norm(x)); `cache` holds this layer's keys and values when generating."""
         x = x + self.attn(self.attn_norm(x), cos, sin, cache)
         return x + self.mlp(self.mlp_norm(x))
@@ -175,6 +185,12 @@ class Block(nn.Module):
 
 class GPT(nn.Module):
     """The whole decoder: token embedding, the blocks, a final norm and the (tied) output layer."""
+
+    rope_cos: torch.Tensor                       # buffers registered in __init__
+    rope_sin: torch.Tensor
+    prompt_format: int                           # set by llm.evaluate.load_model from the checkpoint
+    tasks: list[str]
+    parse_ready: bool
 
     def __init__(self, cfg: GPTConfig):
         super().__init__()
@@ -207,7 +223,7 @@ class GPT(nn.Module):
         return sum(p.numel() for p in self.parameters())
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None = None,
-                loss_mask: torch.Tensor | None = None, cache: list[dict[str, torch.Tensor | int]] | None = None,
+                loss_mask: torch.Tensor | None = None, cache: list[KVCache] | None = None,
                 start_pos: int = 0, masked_only: bool = False) -> tuple[torch.Tensor | None, torch.Tensor | None]:
         """idx (B, T) → logits (B, T, V). With targets, also mean cross-entropy over positions
         where loss_mask is 1 (all positions when no mask is given). masked_only (with a loss_mask): the output layer
@@ -257,11 +273,11 @@ class GPT(nn.Module):
         self.eval()
         n = idx.size(0)
         guided = uncond is not None
-        if guided:
+        if uncond is not None:
             assert uncond.shape == idx.shape, "the unconditional prompt must have the prompt's shape"
         size = min(self.cfg.max_seq_len, idx.size(1) + max_new_tokens)
-        cache = [{"size": size} if preallocate else {} for _ in self.blocks]
-        logits, _ = self(torch.cat([idx, uncond]) if guided else idx, cache=cache)
+        cache: list[KVCache] = [{"size": size} if preallocate else {} for _ in self.blocks]
+        logits, _ = self(torch.cat([idx, uncond]) if uncond is not None else idx, cache=cache)
         pos = idx.size(1)
         out = idx
         for _ in range(max_new_tokens):

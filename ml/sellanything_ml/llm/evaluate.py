@@ -18,7 +18,7 @@ import json
 import random
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 
@@ -167,7 +167,7 @@ def parse_report(model: GPT | None, tok: Tokenizer | None, examples: list[Exampl
         attr = items[ex["item"]].attributes[ex["attr"]]
         groups = ["all", "typo" if ex.get("typo") else "clean", "none" if ex["option"] is None else "option"]
         if model is not None:
-            got = _read_option(model, tok, ex["prompt"], ex["order"])
+            got = _read_option(model, cast(Tokenizer, tok), ex["prompt"], ex["order"])
             for g in groups:
                 res[f"model {g}"][_outcome(got, ex["option"])] += 1
         rule = match(ex["said"], attr).option
@@ -192,9 +192,9 @@ def fixture_report(model: GPT | None, tok: Tokenizer | None, path: Path) -> dict
         item = items[key]
         attr = item.attributes[attr_name]
         target = None if expected == "-" else expected
-        row = {"item": key, "attr": attr_name, "typed": typed, "expected": expected}
+        row: dict[str, Any] = {"item": key, "attr": attr_name, "typed": typed, "expected": expected}
         if model is not None:
-            got = parse_choice(model, tok, item.noun, attr, typed)
+            got = parse_choice(model, cast(Tokenizer, tok), item.noun, attr, typed)
             res["model"][_outcome(got, target)] += 1
             row["model"] = got
         rule = match(typed, attr).option

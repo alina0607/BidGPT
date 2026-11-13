@@ -18,6 +18,7 @@ import math
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -26,7 +27,7 @@ from .model import GPT, GPTConfig
 from .prepare import OUT_DIR as DATA_DIR
 from .tokenizer import ML_DIR, TOKENIZER_DIR, Tokenizer
 
-PRESETS = {
+PRESETS: dict[str, dict[str, Any]] = {
     "tiny": dict(d_model=256, n_layers=4, n_heads=4, n_kv_heads=2),
     "mini": dict(d_model=384, n_layers=6, n_heads=6, n_kv_heads=3),
     "small": dict(d_model=512, n_layers=8, n_heads=8, n_kv_heads=4),
@@ -37,7 +38,7 @@ MAX_SEQ_LEN = 1024           # positions the model is built for (RoPE tables); t
 LOG_EVERY = 25               # steps between progress lines
 GRAD_CLIP = 1.0              # gradient norm clip
 SAMPLE_PROMPT = "The best way to learn a new skill is"
-SAMPLE = {"max_new_tokens": 40, "temperature": 0.8, "top_k": 50}     # the text written at every evaluation
+SAMPLE: dict[str, Any] = {"max_new_tokens": 40, "temperature": 0.8, "top_k": 50}     # the text written at every evaluation
 
 
 def pick_device() -> torch.device:
