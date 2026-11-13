@@ -25,6 +25,7 @@ import argparse
 import json
 import time
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -32,7 +33,7 @@ import torch
 from . import drawgpt, pipeline
 from .infer import DEFAULT_CHECKPOINTS, SketchClassifier, SketchEnsemble
 from .raster import Stroke, rasterize, simplify
-from .strokes import load_cached
+from .strokes import StrokeSet, load_cached
 
 
 def _bitmap(simple: list[Stroke], side: int) -> np.ndarray:
@@ -99,8 +100,8 @@ def evaluate(n: int, temperatures: list[float], seed: int, limit: int = 0, versi
     settings = [(t, g) for t in temperatures for g in guidances]
     no_class = drawgpt.no_class_token(cfg)
     groups = ["real"] + [k for t, g in settings for k in (_group(t, g), _group(t, g) + "+tidy")]
-    rows = {g: [] for g in groups}            # per drawing: class, top1, top3, nearest, ended, strokes
-    variety = {g: [] for g in groups}
+    rows: dict[str, list[tuple]] = {g: [] for g in groups}            # per drawing: class, top1, top3, nearest, ended, strokes
+    variety: dict[str, list[float]] = {g: [] for g in groups}
     t0 = time.time()
     used = cats[:limit] if limit else cats
     for c, name in enumerate(used):
@@ -109,27 +110,27 @@ def evaluate(n: int, temperatures: list[float], seed: int, limit: int = 0, versi
         refs = np.asarray(images[np.sort(train)], np.float32) / 255.0
         seen = {bytes(toks[i, 2:lens[i]].astype(np.uint16)) for i in train if lens[i] > 0}
         val = sp["val"][(sp["val"] >= base) & (sp["val"] < base + cfg.per_class)]
-        strokes_db = load_cached(name, cfg.per_class)
+        strokes_db = cast(StrokeSet, load_cached(name, cfg.per_class))     # every category is cached first
         batches = {"real": [(None, strokes_db.strokes(int(k - base))) for k in rng.choice(val, n, replace=False)]}
         for t, g in settings:                  # same seed for every setting: paired comparisons
             items = generated(model, centers, c, n, t, seed=seed * 1000 + c, guidance=g, no_class=no_class)
             batches[_group(t, g)] = items
             batches[_group(t, g) + "+tidy"] = [(s, drawgpt.tidy(st, bool(len(s) and s[-1] == drawgpt.END)))
                                                for s, st in items]
-        for g, items in batches.items():
-            bits = []
+        for group, items in batches.items():
+            bit_list = []
             for seq, strokes in items:
                 top1, top3, v1_top1, v1_top3, bm = judge.score(strokes, c)
-                bits.append(bm)
+                bit_list.append(bm)
                 ended = True if seq is None else bool(len(seq) and seq[-1] == drawgpt.END)
                 copied = False if seq is None else bytes(np.asarray(seq).astype(np.uint16)) in seen
-                rows[g].append((c, top1, top3, 0.0, ended, len(strokes), copied, v1_top1, v1_top3))
-            bits = np.stack(bits)
+                rows[group].append((c, top1, top3, 0.0, ended, len(strokes), copied, v1_top1, v1_top3))
+            bits = np.stack(bit_list)
             near = _nearest(bits, refs)
             for j in range(len(items)):
-                r = rows[g][-len(items) + j]
-                rows[g][-len(items) + j] = (r[0], r[1], r[2], float(near[j]), *r[4:])
-            variety[g].append(_pairwise_mean(bits))
+                r = rows[group][-len(items) + j]
+                rows[group][-len(items) + j] = (r[0], r[1], r[2], float(near[j]), *r[4:])
+            variety[group].append(_pairwise_mean(bits))
         if (c + 1) % 25 == 0:
             print(f"  eval: {c + 1}/{len(used)} classes ({time.time() - t0:.0f}s)", flush=True)
     out = summarise(rows, variety, used, n, temperatures, seed)
@@ -140,7 +141,7 @@ def evaluate(n: int, temperatures: list[float], seed: int, limit: int = 0, versi
 def summarise(rows: dict, variety: dict, cats: list[str], n: int, temperatures: list[float], seed: int) -> dict:
     real_near = np.array([r[3] for r in rows["real"]])
     close = float(np.percentile(real_near, 5))
-    out = {"drawings_per_class": n, "classes": len(cats), "temperatures": temperatures, "seed": seed,
+    out: dict[str, Any] = {"drawings_per_class": n, "classes": len(cats), "temperatures": temperatures, "seed": seed,
            "copy_threshold": {"what": "5th percentile of real validation drawings' nearest-training distance",
                               "value": close},
            "groups": {}}

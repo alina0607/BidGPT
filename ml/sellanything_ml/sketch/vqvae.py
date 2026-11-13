@@ -67,6 +67,11 @@ class Decoder(nn.Module):
 class Quantizer(nn.Module):
     """Nearest-codebook lookup with an EMA codebook and restarts of unused codes."""
 
+    embed: torch.Tensor          # buffers registered in __init__
+    ema_count: torch.Tensor
+    ema_sum: torch.Tensor
+    idle: torch.Tensor
+
     def __init__(self, k: int, dim: int, decay: float = 0.99, dead_after: int = 200):
         super().__init__()
         self.k, self.dim, self.decay, self.dead_after = k, dim, decay, dead_after

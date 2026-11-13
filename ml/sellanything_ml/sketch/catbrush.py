@@ -24,7 +24,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import NamedTuple
+from typing import Any, NamedTuple, cast
 
 import numpy as np
 import torch
@@ -105,7 +105,7 @@ class Strokes:
         a_lo, a_hi = ALPHA_RANGE
         return cls(xy=_logit(st["xy"] / SIDE), size=_logit((st["length_width"] / np.array(base) - lo) / (hi - lo)),
                    angle=torch.as_tensor(st["angle"], dtype=torch.float32), colour=_logit(st["colour"]),
-                   alpha=_logit((st["alpha"] - a_lo) / (a_hi - a_lo)), base=tuple(base))
+                   alpha=_logit((st["alpha"] - a_lo) / (a_hi - a_lo)), base=cast(tuple[float, float], tuple(base)))
 
     def to(self, dev: str | torch.device) -> Strokes:
         for t in self.tensors():
@@ -236,7 +236,8 @@ def paint(photo: Photo, settings: PaintSettings | None = None) -> tuple[list[Sta
     grid = torch.stack([xs, ys], -1).to(cfg.dev)
     target = photo.target.to(cfg.dev)
     canvas = torch.ones_like(target)
-    stages, frames = [], []
+    stages: list[Stage] = []
+    frames: list[np.ndarray] = []
     for k, (length, width, n) in enumerate(STAGES[:cfg.stages]):
         s = new_stage(photo, canvas.cpu(), k, rng).to(cfg.dev)
         for t in s.tensors():
@@ -249,8 +250,8 @@ def paint(photo: Photo, settings: PaintSettings | None = None) -> tuple[list[Sta
             opt.step()
         with torch.no_grad():
             p = s.params()
-            st = {"xy": p.xy, "length_width": p.lw, "angle": p.angle, "colour": p.colour, "alpha": p.alpha}
-            st = {key: v.detach().cpu().numpy() for key, v in st.items()}
+            raw = {"xy": p.xy, "length_width": p.lw, "angle": p.angle, "colour": p.colour, "alpha": p.alpha}
+            st = {key: v.detach().cpu().numpy() for key, v in raw.items()}
             if cfg.snap is not None:
                 st = cfg.snap(st, k)
                 s = Strokes.from_stage(st, (length, width)).to(cfg.dev)
@@ -267,10 +268,10 @@ def load(photo_path: str, mask_path: str, box: tuple[int, int, int, int] | None 
     from PIL import Image
     photo, mask = Image.open(photo_path).convert("RGB"), Image.open(mask_path).convert("L")
     if box is not None:
-        mask = mask.resize(photo.size, Image.BILINEAR).crop(box)
+        mask = mask.resize(photo.size, Image.Resampling.BILINEAR).crop(box)
         photo = photo.crop(box)
-    img = np.asarray(photo.resize((SIDE, SIDE), Image.LANCZOS), np.float32) / 255
-    m = np.asarray(mask.resize((SIDE, SIDE), Image.BILINEAR), np.float32) / 255
+    img = np.asarray(photo.resize((SIDE, SIDE), Image.Resampling.LANCZOS), np.float32) / 255
+    m = np.asarray(mask.resize((SIDE, SIDE), Image.Resampling.BILINEAR), np.float32) / 255
     target = img * m[..., None] + (1 - m[..., None])
     return Photo(torch.from_numpy(target), torch.from_numpy(m))
 
@@ -284,5 +285,6 @@ if __name__ == "__main__":
     stages, frames = paint(photo, PaintSettings(dev=dev))
     row = np.concatenate([photo.target.numpy()] + frames, 1)
     Image.fromarray((row.clip(0, 1) * 255).astype(np.uint8)).save(out)
-    np.savez(out.rsplit(".", 1)[0] + ".npz", **{f"s{i}_{k}": v for i, st in enumerate(stages) for k, v in st.items()})
+    np.savez(out.rsplit(".", 1)[0] + ".npz",
+             **cast(dict[str, Any], {f"s{i}_{k}": v for i, st in enumerate(stages) for k, v in st.items()}))
     print(f"{sum(len(s['alpha']) for s in stages)} strokes, {time.time() - t0:.0f} s on {dev}")

@@ -41,7 +41,7 @@ import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -332,7 +332,7 @@ def bins_tokens(b: np.ndarray, vocab: Vocab = JOINT, centres: np.ndarray | None 
     if vocab.coords == "xy":
         where = [o["x"] + b[:, 0], o["y"] + b[:, 1]]
     else:
-        p = _to_polar(b[:, :2], centres)
+        p = _to_polar(b[:, :2], cast(np.ndarray, centres))
         where = [o["rad"] + p[:, 0], o["theta"] + p[:, 1]]
     head = where + [o["angle"] + b[:, 2], o["size"] + b[:, 3] * LEVELS_SIZE + b[:, 4]]
     if layer in vocab.blend_layers:
@@ -355,7 +355,7 @@ def tokens_bins(rows: np.ndarray, vocab: Vocab = JOINT, centres: np.ndarray | No
         colour = [rgb // LEVELS_RGB ** 2, rgb // LEVELS_RGB % LEVELS_RGB, rgb % LEVELS_RGB, a]
     else:
         colour = [r[:, 4], r[:, 5], r[:, 6], r[:, 7]]
-    xy = r[:, :2] if vocab.coords == "xy" else _from_polar(r[:, :2], centres)
+    xy = r[:, :2] if vocab.coords == "xy" else _from_polar(r[:, :2], cast(np.ndarray, centres))
     return np.stack([xy[:, 0], xy[:, 1], r[:, 2], r[:, 3] // LEVELS_SIZE, r[:, 3] % LEVELS_SIZE, *colour], 1)
 
 
@@ -458,13 +458,13 @@ def build(out: Path, eyes_dir: Path = EYES, paint: str = "joint", coords: str = 
         split.append(split_of[f.stem])
     lens = np.diff(offs)
     info = {"cats": len(files), "split": {s: split.count(s) for s in ("train", "val", "test")},
-            "tokens": [int(lens.min()), int(np.median(lens)), int(lens.max())], "sets": len(sets), "vocab": vocab.size, "paint": paint, "coords": coords, "style": style,
+            "tokens": [int(np.min(lens)), int(np.median(lens)), int(np.max(lens))], "sets": len(sets), "vocab": vocab.size, "paint": paint, "coords": coords, "style": style,
             "excluded_train": sum(split_of.get(x) == "train" for x in exclude)}
-    assert lens.max() <= vocab.max_tok, info
+    assert np.max(lens) <= vocab.max_tok, info
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out, tokens=np.concatenate(toks), loss_w=np.concatenate(wts), set_ids=np.concatenate(sids),
                         offsets=np.array(offs, np.int64), patches=np.stack(pats), names=np.array(names), split=np.array(split),
-                        sets=np.array(json.dumps([sorted(s) for s in sorted(sets, key=sets.get)])), paint=np.array(paint),
+                        sets=np.array(json.dumps([sorted(s) for s in sorted(sets, key=sets.__getitem__)])), paint=np.array(paint),
                         coords=np.array(coords), style=np.array(style))
     return info
 
@@ -746,8 +746,8 @@ def sample(model, pix: np.ndarray, plans: list[list[int]], temperature: float = 
         rows = torch.full((b, max_len), SP["EOS"], dtype=torch.long, device=dev)
         rows[:, :n0] = torch.tensor(pl, device=dev)
         gram = [Grammar(vocab) for _ in range(b)]
-        for g, p in zip(gram, pl):
-            for tk in p:
+        for g, plan in zip(gram, pl):
+            for tk in plan:
                 g.step(tk)
         done = np.zeros(b, bool)
         cache = [{"size": NPATCH + max_len} for _ in model.blocks]
@@ -790,7 +790,8 @@ def main() -> None:
     if a.cmd == "data":
         print(json.dumps(build(a.out, a.eyes, a.paint, a.coords, read_exclude(a.exclude), a.style)))
     else:
-        cfg = Config(**{k: (bool(getattr(a, k)) if isinstance(v, bool) else getattr(a, k)) for k, v in asdict(Config()).items()})
+        cfg = Config(**cast(dict[str, Any], {k: (bool(getattr(a, k)) if isinstance(v, bool) else getattr(a, k))
+                                             for k, v in asdict(Config()).items()}))
         print(train(cfg, a.data))
 
 

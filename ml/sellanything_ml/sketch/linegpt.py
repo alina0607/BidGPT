@@ -50,6 +50,7 @@ import math
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 
@@ -150,11 +151,14 @@ def stroke_order(assign: np.ndarray, order: str) -> np.ndarray:
 def stroke_plan(path_data: np.ndarray, assign: np.ndarray, order: str) -> tuple[np.ndarray, np.ndarray]:
     """The order the strokes are written in (indices into the authors' order) and which are drawn backwards."""
     if order != "chain":
-        perm = stroke_order(assign, order)
-        return perm, np.zeros(len(perm), bool)
+        authors = stroke_order(assign, order)
+        return authors, np.zeros(len(authors), bool)
     p = np.asarray(path_data, dtype=np.float64)
     ends = p.reshape(-1, 4, 2)[:, [0, 3]]                                   # (n, 2 ends, xy)
-    perm, back, drawn = [], [], []
+    perm: list[int] = []
+    back: list[bool] = []
+    drawn: list[np.ndarray] = []
+    e: int | np.integer
     for k in range(NPARTS):
         rest = [i for i in range(len(p)) if assign[i] == k]
         while rest:
@@ -245,7 +249,7 @@ def render(strokes: np.ndarray, side: int = 256, width: float = 5.0):
         d.line(pts, fill=0, width=w, joint="curve")
         for p in (pts[0], pts[-1]):                      # round caps, as in the SVGs
             d.ellipse([p[0] - w / 2, p[1] - w / 2, p[0] + w / 2, p[1] + w / 2], fill=0)
-    return img.resize((side, side), Image.LANCZOS)
+    return img.resize((side, side), Image.Resampling.LANCZOS)
 
 
 # --- data -----------------------------------------------------------------------------------------
@@ -267,7 +271,7 @@ def stage_data() -> None:
     cats = categories()
     index = {c: i for i, c in enumerate(cats)}
     (DATA_DIR / "categories.json").write_text(json.dumps(cats) + "\n")
-    report = {}
+    report: dict[str, dict[str, Any]] = {}
     for split in SPLITS:
         df = _read(split)
         pts = np.stack([np.stack(p) for p in df.path_data]).astype(np.float64)        # (N, 32, 8)
@@ -286,7 +290,8 @@ def stage_data() -> None:
                 extra[f"mirrored_{order}{tag}"] = np.stack([encode_parts(mirror(p), a, FIRST_CLASS_PART + c, order, on, pl)
                                                             for p, a, c, pl in zip(pts, assign, cls, plans[order])]).astype(np.int16)
         np.savez_compressed(DATA_DIR / f"{split}.npz", tokens=toks, mirrored=flip, tokens_rel=rtoks,
-                            mirrored_rel=rflip, labels=cls, ids=np.array(df.sketch_id), assign=assign, **extra)
+                            mirrored_rel=rflip, labels=cls, ids=np.array(df.sketch_id), assign=assign,
+                            **cast(dict[str, Any], extra))
         # round trip: tokens back to control points
         report[split] = {"sketches": len(df), "values": int(pts.size)}
         for name, rows, rel in (("abs", toks, False), ("rel", rtoks, True)):
@@ -296,11 +301,11 @@ def stage_data() -> None:
                                    "mean_error_px": round(float(err.mean()), 4),
                                    "values_off_by_more_than_2px": int((err > 2).sum())}
         for order in ORDERS[1:]:
-            back = [decode_parts(t[1:]) for t in extra[f"tokens_{order}"]]
+            parts_back = [decode_parts(t[1:]) for t in extra[f"tokens_{order}"]]
             perms = [pl[0] for pl in plans[order]]
             want = np.stack([planned(p, pl) for p, pl in zip(pts, plans[order])])
-            err = np.abs(np.stack([b[0] for b in back]) - want)
-            parts_ok = all((b[2] == a[q]).all() for b, a, q in zip(back, assign, perms))
+            err = np.abs(np.stack([b[0] for b in parts_back]) - want)
+            parts_ok = all((b[2] == a[q]).all() for b, a, q in zip(parts_back, assign, perms))
             report[split][order] = {"error_px_p99_99": float(np.percentile(err, 99.99)),
                                     "parts_round_trip": parts_ok,
                                     "part_switches_median": float(np.median([(np.diff(a[q]) != 0).sum()
@@ -467,7 +472,7 @@ def load_model(path: Path, dev=None):
     st["config"] = asdict(cfg)
     model = GPT(model_config(cfg))
     model.load_state_dict(st["model"])
-    model.line_cfg = cfg                                      # draw() reads the token layout from it
+    setattr(model, "line_cfg", cfg)                           # draw() reads the token layout from it
     return model.to(dev or "cpu").eval(), cfg
 
 

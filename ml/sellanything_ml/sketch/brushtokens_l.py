@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -165,7 +166,7 @@ def decode_plan(tokens: np.ndarray) -> dict:
     t = [int(x) for x in np.asarray(tokens)]
     i = t.index(SP["PLAN"]) + 1
     ang = lambda v: (v - OFFSET["plan_angle"] + 0.5) * 180 / NPLAN_ANGLE - 90          # noqa: E731
-    out = {"pose": None, "head": [], "eyes": [], "pupils": [], "nose": None, "mouth": None}
+    out: dict[str, Any] = {"pose": None, "head": [], "eyes": [], "pupils": [], "nose": None, "mouth": None}
     while t[i] != SP["PLAN_END"]:
         k = NAME.get(t[i])
         if k == "POSE":
@@ -185,7 +186,7 @@ def decode_plan(tokens: np.ndarray) -> dict:
             elif k == "EYE":
                 out["eyes"].append(xy)
             else:
-                out[k.lower()] = xy
+                out[cast(str, k).lower()] = xy
             i = j + 1
     return out
 
@@ -201,7 +202,7 @@ def encode(plan_words: list[str], layers: list[dict], n_layers: int = LAYERS,
         rows = stroke_tokens(layers[k], k)
         out.append(SP[f"LAYER{k}"])
         if k in DETAIL:
-            for idx in regions[k]:
+            for idx in cast(dict[int, list[np.ndarray]], regions)[k]:
                 out += rows[idx].reshape(-1).tolist() + [SP["REGION_END"]]
         else:
             out += (rows if keep is None else rows[keep[k]]).reshape(-1).tolist()
@@ -263,7 +264,7 @@ class Grammar:
             return {f"LAYER{self.layer + 1}"} if self.layer + 1 < self.n_layers else {"EOS"}
         if st == "stroke":
             if n:
-                return [None, {"y"}, {"angle"}, {"size"}, {"strength" if BRUSHES[self.layer][3] else "paint"}][n]
+                return cast(set[str], [None, {"y"}, {"angle"}, {"size"}, {"strength" if BRUSHES[self.layer][3] else "paint"}][n])
             if self.layer in DETAIL:
                 return {"x", "REGION_END"} if self.region < REGIONS else {"LAYER_END"}
             return {"x", "LAYER_END"}

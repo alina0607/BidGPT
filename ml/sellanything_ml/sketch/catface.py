@@ -48,6 +48,7 @@ import time
 import zipfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -114,8 +115,8 @@ def align(img, p: np.ndarray):
     scale = side / BIG
     a, b = scale * c, scale * s
     coeffs = (a, b, cx + c * ox + s * oy, -b, a, cy - s * ox + c * oy)
-    face = img.convert("RGB").transform((BIG, BIG), Image.AFFINE, coeffs, resample=Image.BICUBIC, fillcolor=(255, 255, 255))
-    inside = np.asarray(Image.new("L", img.size, 255).transform((BIG, BIG), Image.AFFINE, coeffs, fillcolor=0)) > 0
+    face = img.convert("RGB").transform((BIG, BIG), Image.Transform.AFFINE, coeffs, resample=Image.Resampling.BICUBIC, fillcolor=(255, 255, 255))
+    inside = np.asarray(Image.new("L", img.size, 255).transform((BIG, BIG), Image.Transform.AFFINE, coeffs, fillcolor=0)) > 0
     return np.asarray(face), inside, (q - [ox, oy]) / scale
 
 
@@ -148,8 +149,10 @@ def stage_data(batch: int = 256) -> None:
     members = _members()
     dev = device()
     nets = {k: infdraw.load(v, dev) for k, v in STYLES.items()}
-    keep, lines, pts = [], {k: [] for k in STYLES}, []
-    zips = {}
+    keep: list[str] = []
+    lines: dict[str, list[np.ndarray]] = {k: [] for k in STYLES}
+    pts: list[np.ndarray] = []
+    zips: dict[Path, zipfile.ZipFile] = {}
     t0 = time.time()
     for i in range(0, len(members), batch):
         faces, masks = [], []
@@ -169,7 +172,7 @@ def stage_data(batch: int = 256) -> None:
         rgb, mask = np.stack(faces), np.stack(masks)
         for k, net in nets.items():
             y = np.where(mask, infdraw.draw(net, rgb), 1.0)
-            small = [np.asarray(Image.fromarray((v * 255).astype(np.uint8)).resize((SIDE, SIDE), Image.LANCZOS)) for v in y]
+            small = [np.asarray(Image.fromarray((v * 255).astype(np.uint8)).resize((SIDE, SIDE), Image.Resampling.LANCZOS)) for v in y]
             lines[k].append(np.stack(small))
         print(f"  data: {min(i + batch, len(members))}/{len(members)} photos, {len(keep)} kept, "
               f"{time.time() - t0:.0f} s", flush=True)
@@ -180,7 +183,7 @@ def stage_data(batch: int = 256) -> None:
     arrays = {k: np.concatenate(v) for k, v in lines.items()}
     for split, ix in splits.items():
         np.savez_compressed(DATA_DIR / f"{split}.npz", points=pts_all[ix], ids=np.array(keep)[ix],
-                            **{k: a[ix] for k, a in arrays.items()})
+                            **cast(dict[str, Any], {k: a[ix] for k, a in arrays.items()}))
     report = {"photos": len(members), "kept": len(keep), "left_out_outside": len(members) - len(keep),
               "min_inside": MIN_INSIDE, "splits": {k: len(v) for k, v in splits.items()},
               "mirror_order": mirror_order(pts_all[splits["train"]]), "seconds": round(time.time() - t0)}
@@ -309,7 +312,7 @@ def stage_color(batch: int = 128, dev_name: str = "") -> None:
             lines = infdraw.draw(net, np.stack(faces))
             for j, (keep, flat, ln) in enumerate(zip(keeps, flats, lines)):
                 img = np.where(keep[..., None], flat * np.where(keep, ln, 1.0)[..., None], 255)
-                out[i + j] = np.asarray(Image.fromarray(img.clip(0, 255).astype(np.uint8)).resize((SIDE, SIDE), Image.LANCZOS))
+                out[i + j] = np.asarray(Image.fromarray(img.clip(0, 255).astype(np.uint8)).resize((SIDE, SIDE), Image.Resampling.LANCZOS))
             print(f"  color {split}: {min(i + batch, len(ids))}/{len(ids)}, {time.time() - t0:.0f} s", flush=True)
         np.savez_compressed(DATA_DIR / f"color_{split}.npz", color=out, ids=ids)
     stats["seconds"] = round(time.time() - t0)
