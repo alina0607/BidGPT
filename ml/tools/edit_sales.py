@@ -14,7 +14,7 @@ An edit file `<edits_dir>/<seed>.json` changes events by their index:
 
 `apply` rebuilds the offers in order: a reaction keeps its own change of offer (new − old) unless the edit gives a new
 offer, a withdrawal stays a withdrawal, an offer never passes the budget; the sale goes to the best final offer. Every
-edited line keeps the teacher's version in "original" and is marked "edited_by": "claude". Every reaction and scene
+edited line keeps the teacher's version in "original" and is marked with "edited_by": EDITOR. Every reaction and scene
 is then checked with stories.reaction_problem / imagine_problem; a sale with a line that still breaks a rule is
 reported and not written.
 """
@@ -27,6 +27,8 @@ from pathlib import Path
 from typing import Any
 
 from sellanything_ml.buyers import stories
+
+EDITOR = "claude"     # the "edited_by" value already stored in the corrected sales; new edits count with them
 
 
 def _sales(path: Path) -> dict[int, dict[str, Any]]:
@@ -70,9 +72,9 @@ def apply_edits(r: dict[str, Any], edits: dict[str, Any]) -> tuple[dict[str, Any
         if edit:
             e["original"] = {k: e[k] for k in edit if k in e}
             e.update(edit)
-            e["edited_by"] = "claude"
+            e["edited_by"] = EDITOR
         staged.append((i, e, edit))
-        staged += [(None, {**x, "edited_by": "claude", "original": None}, x) for x in inserts.get(str(i), [])]
+        staged += [(None, {**x, "edited_by": EDITOR, "original": None}, x) for x in inserts.get(str(i), [])]
     offers: dict[str, int] = {}
     events, problems, answer = [], [], ""
     for i, e, edit in staged:
@@ -102,7 +104,7 @@ def apply_edits(r: dict[str, Any], edits: dict[str, Any]) -> tuple[dict[str, Any
                 problems.append(f"[{i}] {e['name']}: {p}")
         elif e["kind"] == "sold":
             for extra in edits.get("add_imagine", []):
-                scene = {"kind": "imagine", **extra, "edited_by": "claude", "original": None}
+                scene = {"kind": "imagine", **extra, "edited_by": EDITOR, "original": None}
                 p = stories.imagine_problem(scene)
                 if p:
                     problems.append(f"[added] {extra['name']}: {p}")
@@ -121,7 +123,7 @@ def apply_edits(r: dict[str, Any], edits: dict[str, Any]) -> tuple[dict[str, Any
                 problems.append(f"{e['name']}: shares two things with another buyer's scene")
             taken.append(things)
     out = dict(r)
-    out["events"], out["edited"] = events, sum(e.get("edited_by") == "claude" for e in events)
+    out["events"], out["edited"] = events, sum(e.get("edited_by") == EDITOR for e in events)
     m = stories.Market(r["sale"])
     m.cards, m.events = cards, events
     out["check"] = stories.check(m)

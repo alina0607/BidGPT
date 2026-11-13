@@ -16,6 +16,9 @@
   to raising it 99% of the time.
 - **Training data (version B7):** 929 sales, 133,564 examples over seven tasks (open, ask, react, imagine, answer,
   decide, reply).
+- **Where the sales come from:** larger LLMs wrote them as teachers (Qwen2.5-32B-Instruct, Claude, ChatGPT and Muse),
+  and every line was checked against the price engine's rules. BidGPT learns only from that text, never from a
+  teacher's weights.
 
 "GPT" here is the architecture (a decoder-only transformer, trained from scratch); it is not based on OpenAI's
 models.

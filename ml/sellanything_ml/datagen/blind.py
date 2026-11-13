@@ -169,7 +169,7 @@ def main() -> None:
     ap.add_argument("--out", type=Path, required=True, help="where reviewers read and write chunks")
     ap.add_argument("--keys", type=Path, required=True, help="key file folder, never shown to reviewers")
     ap.add_argument("--chunk", type=int, default=250)
-    ap.add_argument("--model", default="claude-sonnet-5-5")
+    ap.add_argument("--model", required=True, help="id of the reviewer model, stored with each verdict")
     ap.add_argument("--date", default="2026-10-07")
     a = ap.parse_args()
     make(a.out, a.chunk, a.keys) if a.command == "make" else collect(a.out, a.keys, a.model, a.date)

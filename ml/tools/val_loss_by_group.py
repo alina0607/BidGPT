@@ -10,7 +10,7 @@ instead of sampled batches, so the numbers are exact for the whole file. Bits pe
 by the UTF-8 bytes of the target's text, so two tokenizers are compared on the same text (B21); --bytes-from takes
 the bytes from a parallel file (same examples in the same order, e.g. the format-5 twin of a format-6 set).
 
-Source of an example (B19): Qwen v9 (author qwen_v9_edited), the first Claude sales (claude, seeds 2048-2099), Muse
+Source of an example (B19): Qwen v9 (author qwen_v9_edited), the first spec-written sales (author "claude", seeds 2048-2099), Muse
 (muse_edited, 2100-2199), the format-5 sales (2200-2349), the scene-quota sales (2500-2649) and the human-style
 seller sales (2650-2699).
 """

@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Paint the CAT dataset's train cats on the Mac, from the front of the list (--n 7065 = the whole list; 4,065 until 2026-10-14), restarting after a slowdown stop (paint_cat_dataset.py
-# stops itself when painting slows 2.5x). Started detached so it outlives any Claude session:
+# stops itself when painting slows 2.5x). Started detached so it outlives the terminal session:
 #
 #     cd ml && (nohup tools/run_mac_paint.sh [N] > data/processed/cat_brush_face/paint_run.log 2>&1 &)
 #

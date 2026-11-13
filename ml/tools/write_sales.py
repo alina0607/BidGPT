@@ -1,4 +1,4 @@
-"""Cat sales written by Claude from scratch (owner, 2026-10-11: Claude writes the sales instead of Qwen), checked
+"""Cat sales written from a spec per seed (the teacher writes the spec instead of a whole Qwen sale), checked
 with the same rules as the teacher's and laid out exactly like them, so they train the buyer GPT the same way.
 
     python tools/write_sales.py <specs_dir> <out.jsonl> [author]

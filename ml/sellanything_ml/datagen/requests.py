@@ -1,4 +1,4 @@
-"""Write the requests Claude is asked to fulfil (docs/design-v2.md §6.3d).
+"""Write the requests the teacher LLM is asked to fulfil (docs/design-v2.md §6.3d).
 
     python -m sellanything_ml.datagen.requests parse --items cat bicycle "cell phone" --variants 8
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ..buyers.schema import DATA_DIR, load_items
 
-GEN_DIR = DATA_DIR / "raw" / "claude_gen" / "v6"
+GEN_DIR = DATA_DIR / "raw" / "teacher_gen" / "v6"
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 SPLITS = DATA_DIR / "item_splits.json"
 

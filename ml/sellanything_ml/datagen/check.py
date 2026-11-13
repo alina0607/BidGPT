@@ -1,4 +1,4 @@
-"""Check Claude's parse outputs, prepare blind reviews, and report (docs/design-v2.md §6.3d).
+"""Check the teacher's parse outputs, prepare blind reviews, and report (docs/design-v2.md §6.3d).
 
     python -m sellanything_ml.datagen.check review-input   # answers without targets, for reviewers
     python -m sellanything_ml.datagen.check report         # checks + agreement + rule baseline + MANIFEST

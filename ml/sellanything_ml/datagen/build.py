@@ -10,8 +10,8 @@ condition reason about health, freshness or an animal's age has its own words (b
 topic()). Every label (Δ, option, attribute, who speaks) is identical to v5's; 10.08% of the lines
 differ, only in those reasons and in later prompts that quote them.
 
-`parse` teaches the model which option a typed answer means. Its text comes from Claude-written
-player answers (raw/claude_gen/v6/batches/parse), and only answers a blind reviewer mapped to the
+`parse` teaches the model which option a typed answer means. Its text comes from teacher-written
+player answers (raw/teacher_gen/v6/batches/parse), and only answers a blind reviewer mapped to the
 writer's target with high confidence are used (check.verdict == "accepted"). The reviews are round 2
 (reviews/parse_r2, datagen/blind.py): round 1 could look up the targets and is not used. Labels never come from
 the text: the target is the option the request asked for. Everything is rebuilt from the raw files
