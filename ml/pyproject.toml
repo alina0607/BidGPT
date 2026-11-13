@@ -46,17 +46,6 @@ target-version = "py310"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-[tool.ruff.lint.per-file-ignores]
-# Patterns start with "**/" so they also match when ruff runs from the repository root
-# with --config ml/pyproject.toml (the pre-commit hook); a pattern without "/" matches the
-# file name, so the scripts/ entry works from both places.
-# Teaching notebooks keep short matplotlib calls on one line (ax.set_xticks([]); ax.set_yticks([])).
-# The other codes are findings already on main when ruff was pinned (2026-11-12), listed
-# file by file so CI is green while new findings anywhere else still fail. Fix them and
-# delete the entries.
-"**/notebooks/*.ipynb" = ["E402", "E702", "E731"]
-"**/notebooks/08_brush_gpt_painting.ipynb" = ["F541"]
-
 [tool.mypy]
 python_version = "3.10"
 ignore_missing_imports = true
