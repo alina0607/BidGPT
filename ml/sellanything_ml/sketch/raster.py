@@ -13,10 +13,13 @@ approximates cairo's anti-aliasing. raster.py's tests compare against the real b
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 from PIL import Image, ImageDraw
 
 Stroke = tuple[list[float], list[float]]    # ([x0, x1, ...], [y0, y1, ...])
+StrokeIn = tuple[Sequence[float], Sequence[float]]   # a stroke read in: integer or float coordinates
 
 
 def _rdp(points: np.ndarray, epsilon: float) -> np.ndarray:
@@ -51,7 +54,7 @@ def _resample(points: np.ndarray, spacing: float = 1.0) -> np.ndarray:
     return np.stack([np.interp(samples, dist, points[:, 0]), np.interp(samples, dist, points[:, 1])], 1)
 
 
-def simplify(strokes: list[Stroke], epsilon: float = 2.0) -> list[Stroke]:
+def simplify(strokes: Sequence[StrokeIn], epsilon: float = 2.0) -> list[Stroke]:
     """Raw strokes in any coordinates → Quick, Draw! 'simplified' strokes (0..255, integers)."""
     arrays = [np.stack([np.asarray(xs, float), np.asarray(ys, float)], 1) for xs, ys in strokes if len(xs)]
     if not arrays:
@@ -70,7 +73,7 @@ def simplify(strokes: list[Stroke], epsilon: float = 2.0) -> list[Stroke]:
     return out
 
 
-def rasterize(strokes: list[Stroke], side: int = 28, line_diameter: float = 16.0,
+def rasterize(strokes: Sequence[StrokeIn], side: int = 28, line_diameter: float = 16.0,
               padding: float = 16.0, supersample: int = 8) -> np.ndarray:
     """Simplified strokes (0..255) → (side, side) uint8 bitmap, ink = 255, background = 0."""
     big = side * supersample

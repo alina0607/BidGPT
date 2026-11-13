@@ -30,7 +30,7 @@ def silhouette(face: np.ndarray) -> np.ndarray:
     lab, n = cc_label(m)
     if n == 0:
         return m
-    big = lab == (np.bincount(lab.ravel())[1:].argmax() + 1)
+    big = lab == (np.argmax(np.bincount(lab.ravel())[1:]) + 1)
     return binary_fill_holes(big)
 
 

@@ -38,6 +38,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, Literal, cast
 
 import numpy as np
 import torch
@@ -122,7 +123,7 @@ def _mark(cfg: Config, key: str, value) -> None:
     os.replace(tmp, p)
 
 
-def _memmap(path: Path, dtype, shape, mode: str):
+def _memmap(path: Path, dtype, shape, mode: Literal["r", "r+"]):
     if mode == "r+" and not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         np.memmap(path, dtype=dtype, mode="w+", shape=shape).flush()
@@ -631,9 +632,9 @@ def stage_stack(cfg: Config) -> None:
                 v = F.cross_entropy(st(Xv), y_val).item()
             if v < best_sv:
                 best_sv, best_state = v, {k: t.clone() for k, t in st.state_dict().items()}
-        results["+".join(combo)] = {"weights": best_w.tolist(), "weights_val_loss": best_v,
+        results["+".join(combo)] = {"weights": cast(torch.Tensor, best_w).tolist(), "weights_val_loss": best_v,
                                     "stacker": best_state, "stacker_val_loss": best_sv}
-        print(f"stack {'+'.join(combo)}: weights {[round(x, 2) for x in best_w.tolist()]} "
+        print(f"stack {'+'.join(combo)}: weights {[round(x, 2) for x in cast(torch.Tensor, best_w).tolist()]} "
               f"(val loss {best_v:.4f}); per-class stacker val loss {best_sv:.4f}", flush=True)
     _save(results, out_path)
 
@@ -666,7 +667,7 @@ def stage_final(cfg: Config, force: bool = False) -> None:
     cats = categories(cfg)
     rec = np.concatenate([download_first_n_strokes(c, cfg.per_class).recognized[cfg.per_class - len(idx) // len(cats):]
                           for c in cats])
-    out = {"drawings": len(idx), "recognized_share": float(rec.mean()), "models": {}}
+    out: dict[str, Any] = {"drawings": len(idx), "recognized_share": float(rec.mean()), "models": {}}
     yt = torch.from_numpy(y)
     for name, logits in rows.items():
         loss, t1, t3 = scores(F.log_softmax(logits, -1), y)

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -18,7 +19,7 @@ import torch
 
 from .data import ML_DIR
 from .model import make_model
-from .raster import Stroke, rasterize, simplify, strokes_to_bitmap
+from .raster import Stroke, StrokeIn, rasterize, simplify, strokes_to_bitmap
 
 DEFAULT_CHECKPOINTS = [ML_DIR / "checkpoints" / "sketch_cnn_345.pt",
                        ML_DIR / "checkpoints" / "sketch_cnn_10class.pt"]
@@ -53,7 +54,7 @@ class SketchClassifier:
         return self.predict_bitmap(strokes_to_bitmap(strokes), k)
 
 
-def stroke_points(strokes: list[Stroke], max_len: int) -> tuple[np.ndarray, int]:
+def stroke_points(strokes: Sequence[StrokeIn], max_len: int) -> tuple[np.ndarray, int]:
     """Simplified strokes (0..255) → (max_len, 3) uint8 points (x, y, 1 if the stroke ends here),
     cut at max_len the same way StrokeSet.padded cut the training data, and the length."""
     rows = []

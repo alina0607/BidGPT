@@ -197,7 +197,7 @@ def stage_sample(n: int = 16, temperature: float = 1.0, seed: int = 1, dev_name:
     side, cols = 160, 8
     sheet = Image.new("RGB", (cols * side, math.ceil(n / cols) * side), "white")
     for i, steps in enumerate(cats):
-        im = Image.fromarray(K.render(steps).clip(0, 255).astype(np.uint8)).resize((side - 6, side - 6), Image.LANCZOS)
+        im = Image.fromarray(K.render(steps).clip(0, 255).astype(np.uint8)).resize((side - 6, side - 6), Image.Resampling.LANCZOS)
         sheet.paste(im, ((i % cols) * side + 3, (i // cols) * side + 3))
     tag = f"t{temperature}_s{seed}"
     sheet.save(RUN_DIR / f"sample_{tag}.png")
@@ -207,7 +207,7 @@ def stage_sample(n: int = 16, temperature: float = 1.0, seed: int = 1, dev_name:
     for i, (f, (name, _)) in enumerate(zip(frames, cats[0])):
         x, y = (i % 6) * side, (i // 6) * (side + 20)
         dr.text((x + 4, y + 2), f"{i + 1}. {name}", fill=(0, 0, 0))
-        fs.paste(Image.fromarray(f.clip(0, 255).astype(np.uint8)).resize((side - 6, side - 6), Image.LANCZOS), (x + 3, y + 18))
+        fs.paste(Image.fromarray(f.clip(0, 255).astype(np.uint8)).resize((side - 6, side - 6), Image.Resampling.LANCZOS), (x + 3, y + 18))
     fs.save(RUN_DIR / f"sample_{tag}_steps.png")
     rec = {"n": n, "temperature": temperature, "seed": seed, "ended_with_eos": ended, "grammar_errors_total": bad,
            "tokens_median": int(np.median(lengths)), "tokens_max": int(max(lengths)),

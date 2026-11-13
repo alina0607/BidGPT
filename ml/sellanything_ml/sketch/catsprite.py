@@ -110,11 +110,11 @@ def import_sheet(sheet_path: Path, out_dir: Path, state: str = "idle", frame_tim
         pieces, _ = cc_label(crop[..., 3] > 40)
         own = pieces[lcrop == PARTS["paws"]]
         if own.size:
-            mine = binary_dilation(pieces == np.bincount(own).argmax(), iterations=3)
+            mine = binary_dilation(pieces == np.argmax(np.bincount(own)), iterations=3)
             crop[~mine] = 0
             lcrop[~mine] = 0
-        frame = Image.fromarray(crop).resize((w, h), Image.LANCZOS)
-        lab = np.asarray(Image.fromarray(lcrop).resize((w, h), Image.NEAREST)).copy()
+        frame = Image.fromarray(crop).resize((w, h), Image.Resampling.LANCZOS)
+        lab = np.asarray(Image.fromarray(lcrop).resize((w, h), Image.Resampling.NEAREST)).copy()
         # the anti-aliased band beside the outline is in no part's flat colour; it goes to the nearest part, or
         # it stays the sheet's grey and shows as a light rim round every part once the cat is coloured
         fa = np.asarray(frame)
@@ -168,7 +168,7 @@ def demo(frames, labels, points, out_png: Path, picks=(0, 4, 5, 6, 10, 13)) -> N
     sheet = Image.new("RGBA", (len(frames) * w * 2, len(rows) * h * 2), (255, 255, 255, 255))
     for r, row in enumerate(rows):
         for c, im in enumerate(row):
-            sheet.alpha_composite(im.resize((w * 2, h * 2), Image.LANCZOS), (c * w * 2, r * h * 2))
+            sheet.alpha_composite(im.resize((w * 2, h * 2), Image.Resampling.LANCZOS), (c * w * 2, r * h * 2))
     sheet.convert("RGB").save(out_png)
 
 

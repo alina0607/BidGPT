@@ -88,7 +88,7 @@ def prepare(path: Path) -> np.ndarray:
     if bg >= DARK:
         a = np.clip(a * 255.0 / bg, 0, 255)
     img = Image.fromarray(a.astype(np.uint8))
-    img = ImageOps.pad(img, (SIDE, SIDE), method=Image.LANCZOS, color=255)
+    img = ImageOps.pad(img, (SIDE, SIDE), method=Image.Resampling.LANCZOS, color=255)
     return np.asarray(img, dtype=np.uint8)
 
 
@@ -187,7 +187,9 @@ def vq_eval(model, images: np.ndarray, dev, n: int = 2048, batch: int = 128) -> 
     """Reconstruction on the first n images of a split: mean absolute error in grey levels (0–255),
     the share of 'ink' pixels (darker than 128) that come back as ink, and codebook usage."""
     model.eval()
-    l1, ink_hit, ink_all, used = 0.0, 0, 0, torch.zeros(model.quant.k, dtype=torch.bool, device=dev)
+    l1, used = 0.0, torch.zeros(model.quant.k, dtype=torch.bool, device=dev)
+    ink_hit: float = 0
+    ink_all: float = 0
     for i in range(0, min(n, len(images)), batch):
         x = to_tensor(images[i:i + batch], dev)
         with torch.autocast(dev.type, dtype=torch.bfloat16):

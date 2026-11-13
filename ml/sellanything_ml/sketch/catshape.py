@@ -175,7 +175,7 @@ def build(pr: dict, k=3, min_area=200, tol=3.0, line_min_area=12, line_tol=1.5) 
         mine = pr["ink"] & region & ~claimed
         claimed |= mine
         steps.append((name, [(None, it) for it in _lines(mine, line_min_area, line_tol)]))
-    base = np.bincount(lab).argmax()
+    base = np.argmax(np.bincount(lab))
     steps.append(("base", [(_lifted(cent[base]), s) for s in S(keep)]))
     steps.append(("inner ears", [(_lifted(pr["sm"][m].mean(0)), s) for m in pr["ears"] if m.any() for s in S(m)]))
     dark = ecent.sum(1).argmin()
@@ -183,7 +183,7 @@ def build(pr: dict, k=3, min_area=200, tol=3.0, line_min_area=12, line_tol=1.5) 
     for disc in pr["eyes"]:
         others = disc & (elab != dark)
         if others.any():
-            iris = np.bincount(elab[others], minlength=3).argmax()
+            iris = np.argmax(np.bincount(elab[others], minlength=3))
             iris_items += [(_lifted(ecent[iris]), s) for s in S(disc & (elab == iris))]
         pupil_items += [(_lifted(ecent[dark]), s) for s in S(disc & (elab == dark))]
     steps.append(("iris", iris_items))
@@ -276,7 +276,8 @@ def decode(toks) -> tuple[np.ndarray, list, int]:
         return np.array(pts, float).reshape(-1, 2), i
 
     points, i = coords(i)
-    steps, colour = [], None
+    steps: list[tuple[str, list]] = []
+    colour = None
     while i < len(toks) and toks[i] != EOS:
         t = toks[i]
         if STEP0 <= t < STEP0 + len(STEPS):

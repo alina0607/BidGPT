@@ -36,6 +36,7 @@ from __future__ import annotations
 import math
 import sys
 from collections.abc import Callable
+from typing import cast
 from dataclasses import dataclass
 
 import numpy as np
@@ -225,14 +226,14 @@ def template_field(face: Face, grid: torch.Tensor) -> torch.Tensor:
     v = v - (0.45 * below * lateral)[..., None] * face.up
     radial = _doubled(torch.atan2(v[..., 1], v[..., 0]))
     eye_dir = _doubled(torch.atan2(face.right[1], face.right[0])).expand_as(radial)
-    w_eye = sum(torch.exp(-(torch.linalg.norm(grid - e, dim=-1) / (0.45 * face.d)) ** 2)
-                for e in (face.eye_l, face.eye_r))
+    w_eye = cast(torch.Tensor, sum(torch.exp(-(torch.linalg.norm(grid - e, dim=-1) / (0.45 * face.d)) ** 2)
+                                   for e in (face.eye_l, face.eye_r)))
     parts, weights = [radial, eye_dir], [torch.ones_like(w_eye), 2.0 * w_eye]
     for outer, tip, inner in face.ears:
         root = (outer + inner) / 2
         parts.append(_doubled(torch.atan2(tip[1] - root[1], tip[0] - root[0])).expand_as(radial))
         weights.append(6.0 * _triangle(grid, outer, tip, inner, soft=4.0))
-    out = sum(w[..., None] * p for w, p in zip(weights, parts))
+    out = cast(torch.Tensor, sum(w[..., None] * p for w, p in zip(weights, parts)))
     return out / (torch.linalg.norm(out, dim=-1, keepdim=True) + 1e-6)
 
 
@@ -432,6 +433,7 @@ class StepStrokes:
         self.size = torch.zeros(n, 2)
         self.alpha = torch.full((n,), 1.5)
         self.angle = torch.zeros(n) if step.angle == "flow" else torch.as_tensor(angle0, dtype=torch.float32)
+        self.colour: torch.Tensor | None
         if step.colour == "free":
             self.colour = _logit(colour0)
         elif step.colour == "value":
@@ -454,9 +456,9 @@ class StepStrokes:
         angle = self.flow_at(xy) + s.dev * torch.tanh(self.angle) if s.angle == "flow" else self.angle
         n = len(xy)
         if s.colour == "free":
-            colour = torch.sigmoid(self.colour)
+            colour = torch.sigmoid(cast(torch.Tensor, self.colour))
         elif s.colour == "value":
-            level = torch.sigmoid(self.colour)[:, None]
+            level = torch.sigmoid(cast(torch.Tensor, self.colour))[:, None]
             colour = torch.tensor(UMBER_DARK) + (torch.tensor(UMBER_WASH) - torch.tensor(UMBER_DARK)) * level
         else:
             colour = torch.tensor(CHARCOAL if s.colour == "charcoal" else UMBER_LINE).expand(n, 3)
@@ -529,7 +531,8 @@ def paint(photo: B.Photo, face: Face, seed: int = 0, iters: int = ITERS, log: Ca
     torch.manual_seed(seed)
     guides, grid = Guides(photo, face), _grid()
     canvas = torch.ones(SIDE, SIDE, 3)
-    stages, frames = [], []
+    stages: list[B.Stage] = []
+    frames: list[np.ndarray] = []
     for k, step in enumerate(steps):
         if k == 1:
             canvas = composite(torch.ones(SIDE, SIDE, 3), stage_params(dusted(stages[0])), steps[0], grid)

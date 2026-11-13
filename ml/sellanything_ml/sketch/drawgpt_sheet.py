@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import torch
@@ -19,7 +20,7 @@ from PIL import Image, ImageDraw
 
 from . import drawgpt, pipeline
 from .raster import simplify
-from .strokes import load_cached
+from .strokes import StrokeSet, load_cached
 
 CELL, PAD, LABEL = 128, 6, 18
 
@@ -61,7 +62,7 @@ def sheet(settings: list[str], classes: list[str], seeds: list[int], out: Path) 
                     base = c * cfg1.per_class
                     val = sp["val"][(sp["val"] >= base) & (sp["val"] < base + cfg1.per_class)]
                     k = int(np.random.default_rng(seed).choice(val)) - base
-                    strokes = load_cached(name, cfg1.per_class).strokes(k)
+                    strokes = cast(StrokeSet, load_cached(name, cfg1.per_class)).strokes(k)
                 else:
                     ver, t, gd = row.split(":")
                     cfg = drawgpt.version(ver)

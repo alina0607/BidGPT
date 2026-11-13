@@ -19,6 +19,7 @@ import json
 import math
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -147,7 +148,7 @@ def evaluate(per_class: int = EVAL_PER_CLASS, boot: int = 1000, out: Path | None
     tuned.eval()
     w_cnn, w_seq = ens.weights
     settings = [("share", f) for f in FRACTIONS] + [("stroke", s) for s in STROKE_INDEX]
-    hits = {name: {s: [] for s in settings} for name in ("ensemble now", "tuned Transformer", "ensemble, tuned Transformer")}
+    hits: dict[str, dict[tuple[str, float], list[tuple[bool, bool]]]] = {name: {s: [] for s in settings} for name in ("ensemble now", "tuned Transformer", "ensemble, tuned Transformer")}
     for idx, label in zip(pick, y):
         pts_full = np.asarray(seq[idx])
         n_pts = int(lengths[idx])
@@ -167,7 +168,7 @@ def evaluate(per_class: int = EVAL_PER_CLASS, boot: int = 1000, out: Path | None
                              ("ensemble, tuned Transformer", w_cnn * lp_cnn + w_seq * lp_tuned)):
                 top = lp[0].topk(3).indices.tolist()
                 hits[name][(kind, v)].append((top[0] == label, label in top))
-    report = {"per_class": per_class, "drawings": int(len(pick)), "bootstrap": boot, "results": {}}
+    report: dict[str, Any] = {"per_class": per_class, "drawings": int(len(pick)), "bootstrap": boot, "results": {}}
     brng = np.random.default_rng(1)
     samples = [brng.integers(0, len(pick), len(pick)) for _ in range(boot)]
     for name, by in hits.items():

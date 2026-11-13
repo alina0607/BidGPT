@@ -16,7 +16,7 @@ NB = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
 RING = [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)]       # clockwise around a pixel
 
 
-def trace(skel: np.ndarray) -> list[np.ndarray]:
+def trace(skel: np.ndarray) -> list[tuple[np.ndarray, bool, bool]]:
     """Pixel paths (y, x) between end and junction pixels, plus closed loops. A pixel is an end or a junction by
     its crossing number (ink runs met going once around it: 1 = end, 3+ = junction), not by its neighbour count,
     which also counts the corner of every diagonal staircase and cut lines into specks."""

@@ -42,6 +42,7 @@ import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import torch
@@ -50,7 +51,7 @@ import torch.nn.functional as F
 from ..llm.model import GPT, GPTConfig
 from . import pipeline
 from .data import ML_DIR
-from .strokes import load_cached
+from .strokes import StrokeSet, load_cached
 
 RUNS_DIR = ML_DIR / "runs"
 DATA_DIR = ML_DIR / "data" / "processed" / "drawgpt_v1"
@@ -161,7 +162,9 @@ def sequence(class_id: int, points: np.ndarray, move_tokens: np.ndarray) -> np.n
 def decode(tokens: np.ndarray, centers: np.ndarray) -> list[tuple[list[float], list[float]]]:
     """Tokens back to strokes ([xs], [ys]); stops at [end]; ignores anything that is not a move."""
     cur = np.zeros(2)
-    strokes, xs, ys = [], [], []
+    strokes: list[tuple[list[float], list[float]]] = []
+    xs: list[float] = []
+    ys: list[float] = []
     for tok in tokens:
         tok = int(tok)
         if tok == END:
@@ -241,15 +244,16 @@ def stage_dict(cfg: DrawConfig) -> np.ndarray:
         return np.load(path)
     rng = np.random.default_rng(cfg.seed)
     tr = pipeline.splits(_pcfg(cfg))["train"]
-    down, up = [], []
+    down_parts: list[np.ndarray] = []
+    up_parts: list[np.ndarray] = []
     for c, name in enumerate(categories(cfg)):
-        s = load_cached(name, cfg.per_class)
+        s = cast(StrokeSet, load_cached(name, cfg.per_class))     # every category is cached first
         idx = tr[(tr >= c * cfg.per_class) & (tr < (c + 1) * cfg.per_class)] - c * cfg.per_class
         for k in rng.choice(idx, min(60, len(idx)), replace=False):
             delta, is_up = moves(s.drawing(int(k)))
-            down.append(delta[~is_up])
-            up.append(delta[is_up])
-    down, up = np.vstack(down), np.vstack(up)
+            down_parts.append(delta[~is_up])
+            up_parts.append(delta[is_up])
+    down, up = np.vstack(down_parts), np.vstack(up_parts)
     n_up = int(cfg.pen_up_share * cfg.dict_samples)
     n_up, n_down = min(n_up, len(up)), min(cfg.dict_samples - n_up, len(down))
     x = np.vstack([down[rng.choice(len(down), n_down, replace=False)],
@@ -276,7 +280,7 @@ def stage_tokens(cfg: DrawConfig) -> None:
     for c, name in enumerate(cats):
         if name in done:
             continue
-        s = load_cached(name, cfg.per_class)
+        s = cast(StrokeSet, load_cached(name, cfg.per_class))     # every category is cached first
         drawings = [s.drawing(i) for i in range(cfg.per_class)]
         # a sequence has points + strokes + 2 tokens; skip encoding what cannot fit anyway
         fits = [len(d) + int(d[:, 2].sum()) + 2 <= MAX_LEN for d in drawings]
@@ -322,7 +326,7 @@ def _data(cfg: DrawConfig):
 
 def recognized(cfg: DrawConfig) -> np.ndarray:
     """Per drawing (same index as the tokens): did the Quick, Draw! game recognise it at the time."""
-    out = [load_cached(name, cfg.per_class).recognized for name in categories(cfg)]
+    out = [cast(StrokeSet, load_cached(name, cfg.per_class)).recognized for name in categories(cfg)]
     assert all(len(r) == cfg.per_class for r in out), "cached stroke files are shorter than per_class"
     return np.concatenate(out).astype(bool)
 

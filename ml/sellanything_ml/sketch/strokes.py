@@ -24,6 +24,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .data import ML_DIR
+from .raster import Stroke
 
 STROKES_DIR = ML_DIR / "data" / "raw" / "quickdraw_strokes"
 SIMPLIFIED_URL = "https://storage.googleapis.com/quickdraw_dataset/full/simplified/"
@@ -42,7 +43,7 @@ class StrokeSet:
     def drawing(self, i: int) -> np.ndarray:
         return self.points[self.offsets[i]:self.offsets[i + 1]]
 
-    def strokes(self, i: int) -> list[tuple[list[int], list[int]]]:
+    def strokes(self, i: int) -> list[Stroke]:
         """Drawing i as ([xs], [ys]) strokes, the format raster.rasterize takes."""
         d = self.drawing(i)
         ends = np.flatnonzero(d[:, 2]) + 1
@@ -61,7 +62,7 @@ class StrokeSet:
         return out, lengths
 
 
-def encode(drawings: list[list]) -> StrokeSet:
+def encode(drawings: list[tuple[list, bool]]) -> StrokeSet:
     """Parsed 'drawing' fields (+ recognized flags) -> StrokeSet."""
     pts, offsets, rec = [], [0], []
     for strokes, recognized in drawings:
@@ -102,7 +103,8 @@ def download_first_n_strokes(category: str, n: int, retries: int = 5) -> StrokeS
     if cached is not None:
         return cached
     url = SIMPLIFIED_URL + urllib.parse.quote(category) + ".ndjson"
-    drawings, start, tail = [], 0, b""
+    drawings: list[tuple[list, bool]] = []
+    start, tail = 0, b""
     while len(drawings) < n:
         chunk = _get_range(url, start, start + CHUNK - 1, retries)
         if not chunk:
