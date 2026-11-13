@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, cast
 
 from . import answers, phrases
 from . import format as fmt
 from .datagen import ask_reason_tag, reason_tag, reason_topic
 from .engine import Round, make_buyers, refuses_risky, round_price
 from .schema import Item, Traits, load_items, load_labels, load_traits
+
+if TYPE_CHECKING:
+    from .voice import ModelVoice
 
 
 # Why a buyer liked or disliked an answer, in a few words for their card: (tag, +1/-1) is the
@@ -81,7 +85,7 @@ class RoundSession:
     heard: list[str] = field(default_factory=list)
     question: tuple | None = None          # (asker, attribute)
     sold: dict | None = None
-    voice: object | None = None            # ModelVoice, or None for phrase pools only
+    voice: ModelVoice | None = None        # None: phrase pools only
     # What each buyer's sprite should play (docs/art.md): idle, talk, happy, unhappy, left, won.
     moods: dict[str, str] = field(default_factory=dict)
     # The last answer, per buyer: how their offer moved, and what they made of it personally
@@ -124,14 +128,19 @@ class RoundSession:
         s._next_question()
         return s
 
+    @property
+    def _live(self) -> Round:
+        """The round being negotiated; start() sets it for every item that is not refused."""
+        return cast(Round, self.round)
+
     def _turn_away_the_wary(self) -> None:
         """A dangerous or black-market item: buyers with a trait that won't touch it say why and leave
         before the first question; the rest negotiate as usual (maybe nobody does)."""
-        for buyer in self.round.buyers:
+        for buyer in self._live.buyers:
             trait = refuses_risky(buyer, self.traits)
             if trait is None:
                 continue
-            self.round.dismiss(buyer)
+            self._live.dismiss(buyer)
             self.moods[buyer.name] = "left"
             self.changes[buyer.name] = {"amount": 0.0, "reaction": "too dangerous", "liked": False}
             self._say(buyer.name, phrases.risky_refusal(trait, self.rng), "phrases")
@@ -147,7 +156,7 @@ class RoundSession:
             raise ValueError("the answer is empty")
         asker, attr = self.question
         if getattr(self.voice, "understands", False):     # a buyer model trained to read answers
-            option, rule = self.voice.parse(self.round.item.noun, attr, typed), "model"
+            option, rule = cast("ModelVoice", self.voice).parse(self._live.item.noun, attr, typed), "model"
         else:                                             # no such model: the rule matcher
             found = answers.match(typed, attr)
             option, rule = found.option, found.rule
@@ -171,12 +180,12 @@ class RoundSession:
         start = len(self.log)
         self._say("You", typed or option.answer, "player", heard=option.answer)
         snapshot = list(self.heard)               # what every buyer has heard when they react
-        before = self.round.offers()
-        reactions, bids = self.round.answer(asker, attr, option_id)
-        by_name = {b.name: b for b in self.round.buyers}
+        before = self._live.offers()
+        reactions, bids = self._live.answer(asker, attr, option_id)
+        by_name = {b.name: b for b in self._live.buyers}
         self._record_changes(before, reactions, bids, option)
         self.moods.update({r.buyer: _mood(r) for r in reactions})
-        noun = self.round.item.noun
+        noun = self._live.item.noun
         for r in reactions:
             if r.left:
                 self._say(r.buyer, phrases.leave(noun, self.rng), "engine")
@@ -191,7 +200,7 @@ class RoundSession:
                 if line is None:
                     tag = reason_tag(by_name[r.buyer].weights, option.signals)
                     line = phrases.react_with_reason(r.delta, noun, option.factor, tag, self.rng,
-                                                     reason_topic(self.round.item, attr))
+                                                     reason_topic(self._live.item, attr))
                 self._say(r.buyer, line, source)
         for bid in bids:
             self._say(bid.buyer, phrases.raise_bid(round_price(bid.amount), self.rng), "engine")
@@ -225,33 +234,33 @@ class RoundSession:
     # --- helpers -----------------------------------------------------------------------------
 
     def _attrs(self) -> list[str]:
-        return list(self.round.item.attributes)
+        return list(self._live.item.attributes)
 
     def _names(self) -> tuple[str, ...]:
-        return tuple(fmt.item_names(self.item_key, self.round.item.noun))
+        return tuple(fmt.item_names(self.item_key, self._live.item.noun))
 
     def _next_question(self) -> None:
-        self.question = self.round.next_question()
+        self.question = self._live.next_question()
         if self.question:
             asker, attr = self.question
             if self.moods.get(asker.name) == "idle":     # a fresh reaction shows first
                 self.moods[asker.name] = "talk"
             line = None
             if self.voice is not None:
-                view = fmt.BuyerView(self.round.item.noun, self._attrs(), self.personas[asker.name], self.heard,
+                view = fmt.BuyerView(self._live.item.noun, self._attrs(), self.personas[asker.name], self.heard,
                                      self._names(), tuple(t for t, w in asker.weights.items() if w > 0))
                 line = self.voice.ask(view, asker.name, attr.name, attr.question)
             source = "model" if line else "phrases"
             if line is None:
                 line = phrases.ask_with_reason(attr.question, ask_reason_tag(asker, attr), self.rng,
-                                               reason_topic(self.round.item, attr))
+                                               reason_topic(self._live.item, attr))
             self._say(asker.name, line, source)
 
     def _record_changes(self, before: dict[str, float], reactions, bids, option) -> None:
-        after = self.round.offers()
+        after = self._live.offers()
         by_reaction = {r.buyer: r for r in reactions}
         outbid = {bid.buyer for bid in bids}
-        by_name = {b.name: b for b in self.round.buyers}
+        by_name = {b.name: b for b in self._live.buyers}
         # Buyers who already left keep the reason they left; everyone else gets this answer's change.
         self.changes = {name: change for name, change in self.changes.items() if name not in before}
         for name, old in before.items():
