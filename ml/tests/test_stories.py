@@ -287,7 +287,7 @@ def test_she_being_is_not_english():
 
 
 def test_human_seller_seeds_add_two_fitting_facts_and_leave_other_seeds_alone():
-    for seed in (2590, 3150, 2100):          # 3000-3149 are the paired seeds (stories.PAIRED_SEEDS)
+    for seed in (2590, 3250, 2100):          # 3000-3234 are the paired seeds (stories.PAIRED_SEEDS)
         assert stories.sale_for_seed(seed) == stories.seed_sale(random.Random(seed))
     for seed in stories.HUMAN_SELLER_SEEDS:
         c = stories.sale_for_seed(seed)["cat"]

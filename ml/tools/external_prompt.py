@@ -388,6 +388,15 @@ def append_life(folder: Path, first: int, last: int) -> None:
 # words no line may use. cue_plan.json keeps all of it for check_cues.py.
 HELD_OUT_WORDS = ("barely", "hardly", "ain't", "no longer", "rarely", "seldom", "even though", "there's no denying")
 HELD_OUT_PATTERN = r"\b(barely|hardly|rarely|seldom|no longer|even though)\b|\bain'?t\b|\bthere'?s no denying\b"
+# From seed 3150 on barely and hardly are taught (owner, 2026-11-10, prompts_3150_plan.md 8 A: B6 still misread them,
+# notebook 14 section 22); the other words stay held out to test words the model never saw.
+HELD_OUT_WORDS_3150 = ("ain't", "no longer", "rarely", "seldom", "even though", "there's no denying")
+HELD_OUT_PATTERN_3150 = r"\b(rarely|seldom|no longer|even though)\b|\bain'?t\b|\bthere'?s no denying\b"
+
+
+def held_out(seed: int) -> tuple[tuple[str, ...], str]:
+    """The words a sale on this seed may never use, and their pattern."""
+    return (HELD_OUT_WORDS_3150, HELD_OUT_PATTERN_3150) if seed >= S.SAYINGS_FROM else (HELD_OUT_WORDS, HELD_OUT_PATTERN)
 CUE_FAMILIES = {   # family: (the words of it check_cues.py looks for, how the prompt names it)
     "nt": (r"n't\b|\b(dont|doesnt|isnt|hasnt|wont|cant|didnt|wasnt|havent|couldnt|wouldnt|arent)\b",
            "n't (doesn't, isn't, hasn't, can't, won't; typed as doesnt or isnt is fine)"),
@@ -404,6 +413,16 @@ CUE_FAMILIES = {   # family: (the words of it check_cues.py looks for, how the p
     "years": (r"\b(years?|yrs?)\b", "the number 2 and the word years"),
     "fussy": (r"\b(fussy|picky)\b", "the word fussy (or picky)"), "any brand": (r"\bany\b", "the words any brand"),
     "plain": ("", "no small word: say the fact plainly"),
+    # 3150 on (prompts_3150_plan.md section 2)
+    "has_fiv": (r"\bhas (got )?fiv\b", "the player's words \"has FIV\" (never the word positive)"),
+    "got_fiv": (r"\bgot fiv\b", "the player's words \"got FIV\" (never the word positive)"),
+    "fiv_plus": (r"\bfiv ?(\+|pos\b)", "the player's words \"fiv+\" or \"fiv pos\" (never the word positive)"),
+    "only": (r"\b(only|just)\b", "only (or just): only ever with a dog"),
+    "notsure": (r"\bnot sure\b|n't know|\bno idea\b|\bunsure\b", "not sure (or don't know, no idea)"),
+    "much": (r"n't shed (all that |that )?much|\bdoesnt shed (all that |that )?much",
+             "doesn't shed much (typed as doesnt is fine)"),
+    "notmuch": (r"\bnot much\b", "not much (\"not much shedding\", \"not much fur on the sofa\")"),
+    "barely": (r"\bbarely\b", "barely"), "hardly": (r"\bhardly\b", "hardly"),
 }
 FORMS = {"full": "a full sentence", "fragment": "a player's fragment",
          "typed": "typed the way this seller types (lowercase, short forms)"}
@@ -553,6 +572,81 @@ TAKE = {   # (topic, side): how the buyers the target turns take it (plan 3.1, l
 TAKE_HEARD = {   # 3050 on: sides TAKE leaves to the life-fact rule, said in the target's own row
     ("litter", "A"): "nobody moves: fully litter trained is what every buyer expects, so they keep",
 }
+_OLD, _DOGS, _LONG, _EXC = ("already has an older cat at home", "already has two dogs",
+                            "works long hours and has little free time", "wants things in excellent shape")
+SHAPES = {   # 3150 on (prompts_3150_plan.md section 2): a target's shape changes what the seller says and who moves.
+    # cues: the small-word families its targets take in turn; said: the fact as the prompt names it; take: how buyers
+    # take it (else TAKE); expect: signs to read on top of FLIP_SIGNS; words: (topic, side, not) words overriding
+    "player": {
+        "cues": ("has_fiv", "got_fiv", "fiv_plus"),
+        "said": "tested FIV positive, said the way players type it, alone (no good news joined to it)",
+        "expect": {_LONG: "-", _EXC: "-"},
+        "words": (r"fiv", r"fiv", r"\b(positive|negative)\b|never|not tested")},
+    "player_good": {
+        "cues": ("has_fiv", "fiv_plus", "got_fiv"),
+        "said": ("tested FIV positive, said the way players type it, then \"but\" (or tho) and that the cat is "
+                 "healthy, as the sheet says (\"has FIV but shes healthy\")"),
+        "take": ("every buyer lowers once for the lifelong vet care, and the buyer with an older cat at home lowers or "
+                 "withdraws; \"healthy\" after the but never cancels it, not even for a buyer whose card wants good "
+                 "health (item 50)"),
+        "expect": {_LONG: "-", _EXC: "-"},
+        "words": (r"fiv", r"fiv[^.?!]*\b(but|though|tho)\b[^.?!]*(healthy|fine|well)",
+                  r"\b(positive|negative)\b|never|not tested")},
+    "healthy": {
+        "cues": ("plain",),
+        "said": ("that the cat is healthy, and only that: no vet check, shots, test or microchip in this answer "
+                 "(the answer to a buyer who asks whether she is healthy)"),
+        "take": ("a buyer whose card cares about the cat's health raises (item 49); everyone else keeps (item 9: it "
+                 "is not news for them)"),
+        "expect": {_EXC: "+", _LONG: "0"},
+        "words": (r"health|fine\b|\bwell\b", r"healthy|fine\b|\bwell\b", r"fiv|felv|vacc|shot|chip|\bvet\b|blood")},
+    "dog_only": {
+        "cues": ("frag", "only", "never"),
+        "said": ("has never lived with another cat, only with a dog: the answer to a question about other cats says "
+                 "both (\"Not really, but she has lived with a dog\")"),
+        "take": ("the buyer with an older cat at home lowers once (no cat housemate: their card is about this); the "
+                 "buyer with two dogs raises (she has lived with a dog); everyone else keeps (item 51)"),
+        "expect": {_OLD: "-", _DOGS: "+"},
+        "words": (r"\bdogs?\b", r"\bdogs?\b", r"lived with (another|a|other|an older) cats?|fine with (other )?cats")},
+    "dog_said": {
+        "said": "has lived with a dog (only that: this answer says nothing about other cats)",
+        "take": ("the buyer with two dogs raises; the buyer with an older cat at home keeps: a dog says nothing about "
+                 "another cat (item 51); everyone else keeps"),
+        "expect": {_OLD: "0"},
+        "words": (None, None, r"\bcats?\b|n't get on")},
+    "cat_lived": {"expect": {_DOGS: "0"}},
+    "age_only": {
+        "take_add": (" The buyer who works long hours keeps: an age is not fewer vet trips (item 9)."),
+        "expect": {_LONG: "0"}},
+    "intact_months": {
+        "cues": ("intact", "intact", "entire"),
+        "said": ("not yet spayed/neutered, typed the way players type, with the age in months in the same answer "
+                 "(\"shes intact, only 2 months\", \"too young for the op, shes intact\")"),
+        "form": "typed",
+        "take": ("a breeder raises; everyone else lowers once for the spay or neuter bill, the allergic buyer too "
+                 "(owner 2026-11-11, item 53: a bill lowers once; they may quote the background fact on neutering "
+                 "before puberty as the line's reservation, never a claim about when puberty comes)"),
+        "expect": {_LONG: "-", "is allergic and worried about fur": "-"}},
+    "unsure": {
+        "cues": ("notsure", "frag"),
+        "take_add": (" The buyer who wants things in excellent shape, the family with young kids and the buyer with "
+                     "an older cat at home keep too, and say how they will check (item 52)."),
+        "expect": {_EXC: "0", "is buying for a family with young kids": "0", _OLD: "0"}},
+    "shed": {
+        "cues": ("much", "barely", "notmuch", "hardly"),
+        "words": (None, r"little|much|\bbit\b|barely|hardly|n't shed|not shed", r"a lot|loads|tons|everywhere")},
+    "shed_intact": {
+        "cues": ("barely", "much", "hardly", "notmuch"),
+        "said": ("sheds very little, and in the same answer that she is not yet spayed (\"barely sheds, but she isn't "
+                 "spayed yet\")"),
+        "take": ("the spay is a bill, so the allergic buyer lowers once too and may name the little shedding as the "
+                 "line's reservation (items 38, 53); a breeder raises (intact); everyone else lowers once for the "
+                 "spay bill"),
+        "expect": {"is allergic and worried about fur": "-"},
+        "words": (None, r"(little|much|\bbit\b|barely|hardly|n't shed|not shed)[^.?!]*"
+                  r"(spay|neuter|intact|fix|\bop\b)|(spay|neuter|intact|fix|\bop\b)[^.?!]*"
+                  r"(little|much|\bbit\b|barely|hardly|n't shed|not shed)", r"a lot|loads|tons|everywhere")},
+}
 FLIP_SIGNS = {   # (topic, side): {persona: the sign plan 3.1 asks for}; check_cues.py lists the other signs to read
     ("shed", "A"): {"is allergic and worried about fur": "-"}, ("shed", "B"): {"is allergic and worried about fur": "+"},
     ("shed", "U"): {"is allergic and worried about fur": "0"},
@@ -669,20 +763,32 @@ def cue_plan(seeds: list[int]) -> dict:
         persona_name = {x["persona"]: x["name"] for x in s["buyers"]}
         for entry in S.PAIRED_SEEDS[seed]:
             topic, side, value, group = entry[:4]
-            key = value if value in CUE_OPTIONS else (topic, side)
-            options = CUE_OPTIONS_HEARD.get(key, CUE_OPTIONS[key]) if seed >= S.HEARD_FROM else CUE_OPTIONS[key]
+            shape = entry[6] if len(entry) > 6 else None        # 3150 on (SHAPES)
+            sh = SHAPES.get(shape, {})
+            key = ("shape", shape) if "cues" in sh else value if value in CUE_OPTIONS else (topic, side)
+            options = (sh["cues"] if "cues" in sh else CUE_OPTIONS_HEARD.get(key, CUE_OPTIONS[key])
+                       if seed >= S.HEARD_FROM else CUE_OPTIONS[key])
             family = options[turn.get(key, 0) % len(options)]
             turn[key] = turn.get(key, 0) + 1
             words, not_words = SIDE_WORDS[(topic, side)]
+            topic_words = TOPIC_WORDS[topic]
+            if "words" in sh:
+                topic_words, words, not_words = (new if new is not None else old for new, old in
+                                                  zip(sh["words"], (topic_words, words, not_words)))
+            expect = {**FLIP_SIGNS.get((topic, side), {}), **sh.get("expect", {})}
+            present = S.paired_buyers(seed)
+            flip = [p for p in present if p in S.PAIRED_BUYERS.get(topic, ()) + S.PAIRED_GROUP_BUYERS.get(group, ())]
+            flip += [p for p, sign in sh.get("expect", {}).items() if sign != "0" and p in present and p not in flip]
+            if shape:                               # a buyer the shape keeps on "0" is not turned by it
+                flip = [p for p in flip if expect.get(p) != "0"]
             targets.append({
                 "topic": topic, "side": side, "value": value, "group": group, "cue": family,
                 "cue_words": CUE_FAMILIES[family][0],
-                "form": "fragment" if family == "frag" else "typed" if "typos" in s["seller_style"] else "full",
-                "news": GOOD_NEWS.get((topic, side), "0"),
-                "flip": [p for p in S.paired_buyers(seed) if p in S.PAIRED_BUYERS.get(topic, ())
-                         + S.PAIRED_GROUP_BUYERS.get(group, ())],
-                "expect": FLIP_SIGNS.get((topic, side), {}), "topic_words": TOPIC_WORDS[topic],
-                "side_words": words, "not_words": not_words})
+                "form": sh.get("form") or ("fragment" if family == "frag" else "typed" if "typos" in s["seller_style"]
+                                           else "full"),
+                "news": GOOD_NEWS.get((topic, side), "0"), "flip": flip, "expect": expect,
+                "topic_words": topic_words, "side_words": words, "not_words": not_words,
+                **({"shape": shape} if shape else {})})
             if len(entry) > 4:              # 3050 on: how the buyers it turns hear it, and who asks
                 if (topic, side) in TAKE_HEARD:         # a side that turns nobody (found writing 3053)
                     targets[-1]["flip"] = []
@@ -709,7 +815,8 @@ def cue_plan(seeds: list[int]) -> dict:
             "contrast": {"order": order, "facts": facts, "fact_words": [fact_words(f) for f in facts]},
             "pair_with": {t["group"]: [x for x in members[t["group"]] if x != seed] for t in targets},
             "buyers": S.paired_buyers(seed), "names": {x["name"]: x["persona"] for x in s["buyers"]}, "fragments": 2}
-    return {"held_out": list(HELD_OUT_WORDS), "held_out_pattern": HELD_OUT_PATTERN,
+    words, pattern = held_out(seeds[0])
+    return {"held_out": list(words), "held_out_pattern": pattern,
             "families": {k: v[0] for k, v in CUE_FAMILIES.items()}, "control_words": CONTROL_WORDS, "yes": YES,
             "fragment": CUE_FAMILIES["frag"][0], "stop": sorted(S.STOP), "allowed": _sheet_phrases(), "seeds": plan}
 
@@ -765,6 +872,8 @@ def _control(kind: str, free: list[str], rng: random.Random) -> dict:
 
 def _said(t: dict) -> str:
     """A target's fact as the prompt names it."""
+    if "said" in SHAPES.get(t.get("shape"), {}):
+        return SHAPES[t["shape"]]["said"]
     if t["value"] is None:
         return {"shed": "how much the cat sheds", "papers": "whether the cat has papers"}[t["topic"]] + \
             " (not on the sheet: the seller does not know)"
@@ -822,6 +931,10 @@ def cues(seed: int, entry: dict) -> str:
     for k, t in enumerate(entry["targets"], 1):
         flip = f" Buyers it turns: the one who {'; the one who '.join(t['flip'])}." if t["flip"] else ""
         take = TAKE.get((t["topic"], t["side"])) or (TAKE_HEARD.get((t["topic"], t["side"])) if "heard" in t else None)
+        sh = SHAPES.get(t.get("shape"), {})
+        take = sh.get("take", take)
+        if take and "take_add" in sh:
+            take = take + "." + sh["take_add"].rstrip(".")
         front = (", within the first six words of the sentence that says it" if t.get("heard") == "inside"
                  else ", within the answer's first six words")
         word = CUE_FAMILIES[t["cue"]][1]
@@ -835,7 +948,7 @@ def cues(seed: int, entry: dict) -> str:
     _, what, example = CONTROLS[control["kind"]]
     pairs = "; ".join(f"{g}: {', '.join(map(str, v))}" for g, v in entry["pair_with"].items())
     if "buts" in entry:
-        return _heard_cues(entry, rows, what, example, pairs)
+        return _heard_cues(entry, rows, what, example, pairs, held_out(seed)[0])
     contrast = entry["contrast"]
     return f'''
 
@@ -874,11 +987,19 @@ vaccines, FIV, fleas, dogs or other cats, says what it means for their own anima
 '''
 
 
-def _heard_cues(entry: dict, rows: list[str], what: str, example: str, pairs: str) -> str:
+def _heard_cues(entry: dict, rows: list[str], what: str, example: str, pairs: str,
+                held: tuple[str, ...] = HELD_OUT_WORDS) -> str:
     """The small-words section of a 3050-on prompt (data/written_sales/prompts_3050_plan.md): who hears each target,
     and two "but" answers whose halves move two buyers opposite ways."""
     control = entry["control"]
     buts = "\n".join(_but_row(k, b) for k, b in enumerate(entry["buts"], 1))
+    n_buts = {1: "One answer that joins", 2: "Two answers that join"}[len(entry["buts"])]
+    sayings = ("" if not any("shape" in t for t in entry["targets"]) else
+               "\n\nThis batch (3150 on) also teaches sayings the model saw too few times (notebook 14 sections 18 to "
+               "22): FIV positive in a player's words (\"has FIV\", \"fiv+\"), \"healthy\" alone, \"only lived with "
+               "a dog\" for a question about cats, an age alone, \"intact, only 2 months\", \"not sure\", and "
+               "\"doesn't shed much\", \"not much\", \"barely\", \"hardly\". Say each target exactly as its row "
+               "asks: these words are the lesson.")
     return f'''
 
 ## This sale's small words and who hears them (added 2026-10-31; checked by check_cues.py, read by the reviewer)
@@ -886,7 +1007,7 @@ def _heard_cues(entry: dict, rows: list[str], what: str, example: str, pairs: st
 Why: the buyer model reads the topic of an answer but not its small words ("not", "never", "but"), and when another
 buyer asks, it leaves the buyer the answer is about on keep: "She doesn't like children" moved the parent when the
 parent asked, and nobody when someone else asked. In the game nine buyers of ten hear every answer to someone else's
-question. Paired sales ({pairs}) carry the same topic with the opposite meaning.
+question. Paired sales ({pairs}) carry the same topic with the opposite meaning.{sayings}
 
 **A. Target answers.** Each says exactly this side of the fact and nothing more (no detail the sheet does not give:
 not how she gets on badly, not why), and puts the small word within the first six words: "Not microchipped, sorry",
@@ -900,7 +1021,7 @@ children, ..."). Good news moves them as surely as bad news: a raise for good ne
 {"; ".join(control["facts"])}. Example (another cat; do not copy): "{example}" Every buyer reacts exactly as they would
 to the plain fact: never lower because the sentence has "not", "no" or "never" in it.
 
-**C. Two answers that join two sides with "but", "though" or "tho"** (each in its own round, the connector as given).
+**C. {n_buts} two sides with "but", "though" or "tho"** (each in its own round, the connector as given).
 Each says only sheet facts, and every buyer reacts to each half that concerns them (item 2):
 {buts}
 
@@ -908,7 +1029,7 @@ Each says only sheet facts, and every buyer reacts to each half that concerns th
 "dunno tbh", "yea all shots done" (a fragment target or "but" answer above counts).
 
 **E. Never use these words anywhere in the sale** (no answer, question, note, reaction, scene or decision; they are
-kept out of training to test the model on them): {", ".join(HELD_OUT_WORDS)}.
+kept out of training to test the model on them): {", ".join(held)}.
 
 **F. Buyers.** Every greeting ends with the kind of cat the buyer wants, following from the life it tells ("I sand
 every boat hull I sell until it shines, and I'd like a cat kept with the same care", not "I'm a plumber, so I want a

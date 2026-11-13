@@ -37,11 +37,13 @@ def test_the_sheets_before_3050_and_after_3149_are_what_they_were():
     # recorded 2026-10-31 from the committed stories.py, before 3050-3149 were added
     assert _digest(range(3000)) == "7d65b084c29b9ef5ed149c59843a8b1fade823d8b54701c469855f4e7bbd699f"
     assert _digest(range(3000, 3050)) == "7056a60e839a10c5c15b1b4705162788ac72bf37ed4e00b58be137f4a0a6bd0e"
-    assert _digest(range(3150, 3300)) == "d6846b0aa164e4e7cf1a0150a571be2ea63a3dda204531462db8248aa9677a22"
+    # 3150-3299 was d6846b0a... until 2026-11-10, when 3150-3234 were paired (tests/test_sayings_3150.py); the
+    # rest of that range is unchanged (digest from the stories.py before that change)
+    assert _digest(range(3235, 3300)) == "01c1794af3bf00f74ff595d92bf8f6da970a47519562be8ef1a6295505305d91"
 
 
 def test_the_targets_follow_the_quotas_of_section_3_1():
-    batch = {seed: ts for seed, ts in S.PAIRED_SEEDS.items() if seed >= S.HEARD_FROM}
+    batch = {seed: ts for seed, ts in S.PAIRED_SEEDS.items() if S.HEARD_FROM <= seed < S.SAYINGS_FROM}
     assert sorted(batch) == list(SEEDS)
     targets = [t for ts in batch.values() for t in ts]
     assert len(targets) == 265 and all(len(t) == 6 for t in targets)
@@ -144,7 +146,10 @@ def test_the_cue_plan_writes_heard_and_askers_and_keeps_the_balance():
 
 
 def test_the_prompt_folder_is_up_to_date_and_names_who_asks():
-    assert json.loads((FOLDER / "cue_plan.json").read_text()) == json.loads(json.dumps(E.cue_plan(list(SEEDS))))
+    stored, now = json.loads((FOLDER / "cue_plan.json").read_text()), json.loads(json.dumps(E.cue_plan(list(SEEDS))))
+    families = now.pop("families")         # 3150 added cue families (tests/test_sayings_3150.py); none changed
+    assert stored.pop("families").items() <= families.items()
+    assert stored == now
     plan = E.cue_plan(list(SEEDS))["seeds"]
     for seed in SEEDS:
         text = (FOLDER / f"seed_{seed}.md").read_text()

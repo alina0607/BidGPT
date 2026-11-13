@@ -32,13 +32,14 @@ def _digest(seeds) -> str:
 def test_every_other_seed_draws_exactly_what_it_drew_before():
     # recorded 2026-10-29 before PAIRED_SEEDS was added
     assert _digest(range(3000)) == "7d65b084c29b9ef5ed149c59843a8b1fade823d8b54701c469855f4e7bbd699f"
-    # 3050-3149 became paired seeds on 2026-10-31 (test_heard_3050.py); the seeds after them recorded before that
-    assert _digest(range(3150, 3300)) == "d6846b0aa164e4e7cf1a0150a571be2ea63a3dda204531462db8248aa9677a22"
+    # 3050-3149 became paired seeds on 2026-10-31 (test_heard_3050.py), 3150-3234 on 2026-11-10
+    # (test_sayings_3150.py); the seeds after them recorded before that (3150-3299 was d6846b0a... until 11-10)
+    assert _digest(range(3235, 3300)) == "01c1794af3bf00f74ff595d92bf8f6da970a47519562be8ef1a6295505305d91"
 
 
 def test_the_new_values_are_never_drawn_at_random():
     new = {S.SHEDS_LITTLE, *S.AGAINST.values()}
-    for seed in [*range(2000, 3000), *range(3150, 3300)]:      # 3050-3149 are paired (test_heard_3050.py)
+    for seed in [*range(2000, 3000), *range(3235, 3300)]:      # 3150-3234 are paired (test_sayings_3150.py)
         assert not new & set(E.sheet_facts(S.sale_for_seed(seed)["cat"])), seed
 
 
@@ -128,7 +129,10 @@ def test_the_cue_plan_follows_the_plan():
 
 
 def test_the_prompt_folder_is_up_to_date_and_names_no_held_out_word_outside_its_ban():
-    assert json.loads((FOLDER / "cue_plan.json").read_text()) == json.loads(json.dumps(E.cue_plan(list(PAIRED))))
+    stored, now = json.loads((FOLDER / "cue_plan.json").read_text()), json.loads(json.dumps(E.cue_plan(list(PAIRED))))
+    families = now.pop("families")         # 3150 added cue families (test_sayings_3150.py); none changed
+    assert stored.pop("families").items() <= families.items()
+    assert stored == now
     for seed in PAIRED:
         text = (FOLDER / f"seed_{seed}.md").read_text()
         assert "## This sale's small words" in text and S.facts(S.sale_for_seed(seed)) in text
