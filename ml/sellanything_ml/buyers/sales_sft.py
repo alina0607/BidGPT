@@ -78,6 +78,10 @@ SOURCES_B5 = (SOURCES_B1[0], WRITTEN_SALES / "sales_decide.jsonl", WRITTEN_SALES
 SOURCES_B6 = (DATA_DIR / "processed" / "buyer_sales_v9_b6.jsonl", WRITTEN_SALES / "sales_decide_b6.jsonl",
               WRITTEN_SALES / "sales_b2_decide_b6.jsonl", EXTERNAL_SALES / "muse" / "sales_v3_decide_b6.jsonl",
               WRITTEN_SALES / "sales_b3_decide_b6.jsonl")
+# B7 (2026-11-11): B6's first four files as rebuilt on 2026-11-10 from the reviewed specs, and specs_b3 rebuilt into a
+# new file that adds the sayings batch 3150-3234 (data/written_sales/prompts_3150_plan.md); the 593 older specs_b3
+# sales are the same rows as in sales_b3_decide_b6.jsonl
+SOURCES_B7 = SOURCES_B6[:4] + (WRITTEN_SALES / "sales_b3_decide_b7.jsonl",)
 SOURCES = SOURCES_B2
 OUT_DIR = DATA_DIR / "processed" / "buyers_b2"
 CARDS_FILE = DATA_DIR / "cat_buyer_cards.json"   # persona → the cards written for it (the game's buyer setup)
@@ -407,14 +411,16 @@ def main() -> None:
     ap.add_argument("--prompt-format", type=int, default=PROMPT_FORMAT, choices=[4, 5, 6, 7, 8, 9, 10],
                     help="4 rebuilds buyer GPT B1's data (budget on the card); 6 uses the persona, animal and thing "
                          "tokens; 9 writes the scene line first; 10 keeps older rounds' answers")
-    ap.add_argument("--sources", choices=["b2", "b3", "b4", "b5", "b6"], default="b2",
+    ap.add_argument("--sources", choices=["b2", "b3", "b4", "b5", "b6", "b7"], default="b2",
                     help="b2: the sales of B2 (default); b3: all format-5 sales so far plus Muse's 100; "
                          "b4: b3 plus sales_b3.jsonl (the scene-quota sales); b5: with the seller's decisions; "
-                         "b6: b5 with specs_b3 rebuilt (sales_b3_decide_b6.jsonl)")
+                         "b6: b5 with specs_b3 rebuilt (sales_b3_decide_b6.jsonl); "
+                         "b7: b6 plus the sayings batch 3150-3234 (sales_b3_decide_b7.jsonl)")
     a = ap.parse_args()
     sources = (SOURCES_B1 if a.prompt_format == 4 else SOURCES_B3 if a.sources == "b3"
                else SOURCES_B4 if a.sources == "b4" else SOURCES_B5 if a.sources == "b5"
-               else SOURCES_B6 if a.sources == "b6" else SOURCES)   # B1: its two
+               else SOURCES_B6 if a.sources == "b6" else SOURCES_B7 if a.sources == "b7"
+               else SOURCES)   # B1: its two
     print(json.dumps(build(sources, a.out, a.tokenizer, a.prompt_format), indent=1))
 
 
