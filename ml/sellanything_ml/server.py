@@ -19,7 +19,7 @@ import random
 import re
 import traceback
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 PROTOCOL_VERSION = 1
 LOG_DIR = Path(__file__).resolve().parents[1] / "logs"
@@ -223,7 +223,7 @@ def _valid_strokes(strokes: Any) -> bool:
 
 def handle_message(msg: dict[str, Any], models: Models | None = None) -> dict[str, Any]:
     """Map one request to one response. `models` can be swapped out in tests."""
-    handler = HANDLERS.get(msg.get("type"))
+    handler = HANDLERS.get(cast(str, msg.get("type")))
     if handler is None:
         return _error(f"unknown message type: {msg.get('type')!r}")
     return handler(msg, models or DEFAULT_MODELS)
@@ -539,8 +539,12 @@ def _cat_buying(msg: dict[str, Any], models: Models, n: int) -> Any:
     if seller_gpt is None:
         return _error("buying needs item 'cat' and a model that learned the seller's side (runs/sft_b6)")
     from .buyers.cat_market import CatMarket, seller_sheet
-    seed = msg.get("seed") if isinstance(msg.get("seed"), int) else random.randrange(2**31)
-    name = msg.get("name") if isinstance(msg.get("name"), str) and msg["name"].strip() else "You"
+    seed = msg.get("seed")
+    if not isinstance(seed, int):
+        seed = random.randrange(2**31)
+    name = msg.get("name")
+    if not (isinstance(name, str) and name.strip()):
+        name = "You"
     return CatMarket.start(seller_gpt, n, seed=seed, seller=seller_sheet(seed), player=name.strip()[:20])
 
 
@@ -587,7 +591,7 @@ def _round_sell(msg: dict[str, Any], models: Models) -> dict[str, Any]:
 
 def _in_round(msg: dict[str, Any], models: Models, act) -> dict[str, Any]:
     """Run `act` on the session's round, turning the round's rule errors into error replies."""
-    rnd = models.rounds.get(msg.get("session"))
+    rnd = models.rounds.get(cast(str, msg.get("session")))
     if rnd is None:
         return _error("no round for this session; send round_start first")
     try:

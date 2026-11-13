@@ -135,7 +135,7 @@ def _says_nothing_about(text: str, attr) -> bool:
 
 def _none_examples(split: str, want: int, accepted_by_item, items, rng) -> list[dict]:
     """Up to `want` answers about another attribute of the same item, asked against one they do not answer."""
-    out = []
+    out: list[dict] = []
     pool = [(r, s) for key in sorted(accepted_by_item) for r, s in accepted_by_item[key]
             if s == split and r["style"] != "extra"]
     rng.shuffle(pool)
@@ -161,7 +161,7 @@ def parse_examples() -> tuple[dict[str, list[dict]], dict]:
         raise SystemExit(f"{len(problems)} format problems in the raw batches, e.g. {problems[:3]}")
     reviews = read_reviews("parse", "parse_r2")
     rng = random.Random(SEED)
-    stats = Counter()
+    stats: Counter[str] = Counter()
     by_split, accepted_by_item = _answer_examples(rows, reviews, items, rng, stats)
     for split, exs in list(by_split.items()):           # "none" examples, NONE_SHARE of each split
         exs += _none_examples(split, int(len(exs) * NONE_SHARE / (1 - NONE_SHARE)), accepted_by_item, items, rng)

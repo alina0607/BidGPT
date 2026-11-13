@@ -249,15 +249,15 @@ def check(example: Example, items: dict[str, Item]) -> None:
         assert delta == example["delta"], (delta, example)
         assert (line is not None) == example["speaks"], example
     else:
-        parsed = fmt.parse_line(target)
-        assert parsed is not None, target
-        assert parsed[0] == example["buyer"], example
+        said = fmt.parse_line(target)
+        assert said is not None, target
+        assert said[0] == example["buyer"], example
         if task == "ask":
             item = items[example["item"]]
             question = item.attributes[example["attr"]].question
-            if fmt.ITEM_SLOT in parsed[1]:
+            if fmt.ITEM_SLOT in said[1]:
                 question = fmt.to_slot(question, fmt.item_names(item.key, item.noun))
-            assert question[1:-1].lower() in parsed[1].lower(), (question, parsed[1])
+            assert question[1:-1].lower() in said[1].lower(), (question, said[1])
 
 
 def split_of(i: int, heldout: bool) -> str:

@@ -50,7 +50,7 @@ def attribute_for(question: str) -> str | None:
     """The game-cat attribute a free teacher question is chiefly about, if any."""
     text = " " + question.lower()
     scores = {name: sum(word in text for word in words) for name, words in KEYWORDS.items()}
-    best = max(scores, key=scores.get)
+    best = max(scores, key=scores.__getitem__)
     return best if scores[best] else None
 
 
@@ -154,21 +154,21 @@ def convert_sale(sale: dict) -> list[dict]:
             # offer movement is still valid; only movement in the opposite direction is inconsistent.
             if delta is None or (delta == 0 and movement != 0) or (delta and movement * delta < 0):
                 continue
-            target = fmt.to_slot(event.get("says", ""), names) or None
+            said = fmt.to_slot(event.get("says", ""), names) or None
             # Silent zeroes overwhelm useful lines; the game already has plenty from engine data.
-            if target is None:
+            if said is None:
                 continue
             examples.append({"task": "react", "item": "cat", "buyer": event["name"], "traits": [],
                              "show_attrs": True, "delta": delta, "speaks": True,
                              "source_seed": sale["seed"], "source_event": index,
                              "prompt": fmt.react_prompt(_view(sale, event["name"], answer_snapshot, attrs)),
-                             "target": fmt.react_target(event["name"], target, delta)})
+                             "target": fmt.react_target(event["name"], said, delta)})
     return examples
 
 
 def build(sales: list[dict]) -> tuple[dict[str, list[dict]], dict]:
     """Stable 80/10/10 split by sale, so one conversation never leaks between splits."""
-    out = {"train": [], "val": [], "test_seen": [], "test_heldout": []}
+    out: dict[str, list[dict]] = {"train": [], "val": [], "test_seen": [], "test_heldout": []}
     counts: Counter = Counter()
     for position, sale in enumerate(sorted(sales, key=lambda row: row["seed"])):
         split = "val" if position % 10 == 8 else "test_seen" if position % 10 == 9 else "train"

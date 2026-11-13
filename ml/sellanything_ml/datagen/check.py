@@ -106,7 +106,7 @@ def report(task: str = "parse") -> dict:
     reviews = read_reviews(task)
     items = load_items()
     dup = Counter(r["text"].lower() for r in rows)
-    stats = defaultdict(Counter)
+    stats: defaultdict[str, Counter[str]] = defaultdict(Counter)
     for r in rows:
         q = r["request"]
         verdict_ = verdict(reviews.get(r["answer_id"]), q["target"])

@@ -14,7 +14,8 @@ class Scripted:
     prompt_format = 5
 
     def __init__(self, name: str, react: str, ask: str):
-        self.name, self.react, self.ask, self.prompts = name, react, ask, []
+        self.name, self.react, self.ask = name, react, ask
+        self.prompts: list[str] = []
 
     def say(self, prompt: str, task: str, seed: int) -> str:
         self.prompts.append(prompt)

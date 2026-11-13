@@ -17,7 +17,9 @@ def scene(k: int) -> tuple[list[str], str]:
 
 def who(prompt: str) -> str:
     """The buyer a per-buyer prompt is for."""
-    return re.search(r"You are (\w+), who", prompt).group(1)
+    m = re.search(r"You are (\w+), who", prompt)
+    assert m is not None, prompt
+    return m.group(1)
 
 
 def fake_teacher():

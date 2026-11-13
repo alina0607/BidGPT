@@ -265,7 +265,7 @@ def _number_at(toks: list[str], i: int) -> tuple[float | Quantity | None, int]:
     return None, 1
 
 
-def _after_article(toks: list[str], i: int) -> tuple[float | None, int]:
+def _after_article(toks: list[str], i: int) -> tuple[float | Quantity | None, int]:
     """"a week" is one week, "a few" is three, "a hundred" is a hundred; "a" before anything else is
     not a number."""
     nxt = toks[i + 1] if i + 1 < len(toks) else ""

@@ -101,7 +101,7 @@ class PairedSale:
         text = _typed(text, "answer")
         start = len(self.log)
         self.log.append(f"You: {text}")
-        turn = {**self.question, "answer": text, "reactions": {}}
+        turn: dict[str, Any] = {**self.question, "answer": text, "reactions": {}}
         for model, s in self.sales.items():
             turn["reactions"][model] = self._reactions(model, s, text)
         self.turns.append(turn)
@@ -119,7 +119,7 @@ class PairedSale:
             name, _, says = line.partition(": ")
             said[name] = {"says": says, "readable": source == "model"}
             self.log.append(f"[{model}] {line}")
-        out = {}
+        out: dict[str, dict[str, Any]] = {}
         for name in s.cards:
             if before[name] <= 0:
                 out[name] = {"left_before": True}

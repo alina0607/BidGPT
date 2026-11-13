@@ -133,7 +133,7 @@ def write_data(path, paint: str, style: str = "layers") -> None:
     np.savez(path, tokens=np.concatenate(toks), loss_w=np.concatenate(wts), set_ids=np.concatenate(sids),
              offsets=np.array(offs, np.int64), patches=np.zeros((2, EG.NPATCH, EG.PATCH_DIM), np.uint8),
              names=np.array(["a", "b"]), split=np.array(["train", "val"]),
-             sets=np.array(json.dumps([sorted(s) for s in sorted(sets, key=sets.get)])), paint=np.array(paint),
+             sets=np.array(json.dumps([sorted(s) for s in sorted(sets, key=sets.__getitem__)])), paint=np.array(paint),
              style=np.array(style))
 
 

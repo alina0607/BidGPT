@@ -80,7 +80,7 @@ def main() -> None:
     if not final:
         print("Everyone walked away.")
         return
-    best = max(final, key=final.get)
+    best = max(final, key=final.__getitem__)
     print("Final offers: " + ", ".join(f"{n} {money(v)}" for n, v in final.items()))
     print(f"Best offer: {best} at {money(final[best])} "
           f"(typical price for a {item.noun}: {money(item.typical)})")

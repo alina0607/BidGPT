@@ -123,7 +123,7 @@ def score_props(item: Item, group: str, weights: dict[str, int], props: dict[str
         from_buyer = lam * sum(per_tag.values())
         score = p.base + from_item + from_buyer
         if from_buyer > 0 and from_buyer >= max(p.base, from_item):
-            tag = max(per_tag, key=per_tag.get)
+            tag = max(per_tag, key=per_tag.__getitem__)
             reason = f"{buyer_labels.get(tag, 'Taste')}: {TAG_WORDS[tag]}"
         else:
             reason = f"goes with a {item.noun}"

@@ -34,6 +34,7 @@ import json
 import random
 import secrets
 from pathlib import Path
+from typing import Any
 
 from ..buyers.format import LETTERS
 from ..buyers.schema import load_items
@@ -132,7 +133,7 @@ def collect(out: Path, keys_dir: Path, model: str, date: str) -> dict:
         keys[k["key"]] = k
     ROUND_DIR.mkdir(parents=True, exist_ok=True)
     sha = prompt_sha256(PROMPT)
-    stats = {"lines": 0, "unknown key": 0, "bad": 0, "chunks": 0, "rejected chunks": {}}
+    stats: dict[str, Any] = {"lines": 0, "unknown key": 0, "bad": 0, "chunks": 0, "rejected chunks": {}}
     for res in sorted(out.glob("chunk_*.out.tsv")):
         name = res.name.replace(".out.tsv", "")
         target = ROUND_DIR / f"batch_{name.split('_')[1]}.jsonl"

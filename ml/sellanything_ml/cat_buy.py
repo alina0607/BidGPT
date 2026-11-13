@@ -54,8 +54,9 @@ def main() -> None:
     if gpt is None:
         raise SystemExit("no model that learned the seller's side on disk yet (runs/sft_b6/best.pt)")
     seed = a.seed if a.seed is not None else int.from_bytes(os.urandom(3), "big")
-    m = CatMarket.start(gpt, a.buyers, seed=seed, seller=seller_sheet(seed), player=a.name)
-    print(f"A cat for sale, asking ${m.seller['asking']} (sale {seed}). Other buyers: "
+    sheet = seller_sheet(seed)                  # the market keeps this object as m.seller
+    m = CatMarket.start(gpt, a.buyers, seed=seed, seller=sheet, player=a.name)
+    print(f"A cat for sale, asking ${sheet['asking']} (sale {seed}). Other buyers: "
           + ", ".join(f"{n} (who {c['persona']})" for n, c in m.cards.items() if n != a.name) + "\n")
     show(m.log)
     shown = len(m.log)
@@ -77,7 +78,7 @@ def main() -> None:
     sold = m.sold
     print("\n" + (f"Sold to {sold['buyer']} at ${sold['price']}." if sold["buyer"] else "The cat stays with the seller.")
           + (" That's you!" if sold["buyer"] == a.name else ""))
-    print("The cat was: " + "; ".join([m.seller["cat"]["age"], m.seller["cat"]["breed"], m.seller["cat"]["health"]]))
+    print("The cat was: " + "; ".join([sheet["cat"]["age"], sheet["cat"]["breed"], sheet["cat"]["health"]]))
 
 
 if __name__ == "__main__":
