@@ -197,7 +197,10 @@ def test_format_10_drops_the_seller_views_oldest_lines_to_fit(monkeypatch):
     cat = {"age": "2 years", "breed": "mixed", "home": "indoor", "fixed": "spayed", "health": "healthy",
            "virus": "FIV negative", "company": [], "temperament": "calm", "quirks": []}
     s = {**sale(4), "sale": {"cat": cat, "seller_style": "plain", "asking": 80}}
-    words = lambda text: len(text.split())
+
+    def words(text: str) -> int:
+        return len(text.split())
+
     full = S.examples(s, 10)
     monkeypatch.setattr(S, "MAX_TOKENS", max(words(e["prompt"] + e["target"]) for e in full) - 5)
     fit = S.examples(s, 10, words)

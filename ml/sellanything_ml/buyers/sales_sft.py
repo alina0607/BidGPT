@@ -379,7 +379,11 @@ def build(sources: tuple[Path, ...] = SOURCES, out_dir: Path = OUT_DIR, tokenize
     if tokenizer:
         from ..llm.tokenizer import Tokenizer
         encode = Tokenizer(tokenizer).encode
-        count = lambda text: len(encode(text))     # tokens in a text
+
+        def count_tokens(text: str) -> int:
+            return len(encode(text))
+
+        count = count_tokens
     splits: dict[str, list[Example]] = {"train": [], "val": []}
     for sale in sales:
         splits["val" if is_val(sale["seed"]) else "train"].extend(examples(sale, prompt_format, count))

@@ -592,7 +592,10 @@ def nearest(a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """For every image in a, the index of and distance to its nearest image in b (mean absolute pixel
     difference after a 3×3 blur, so a line moved by a pixel or two still counts as close)."""
     from scipy.ndimage import uniform_filter
-    blur = lambda x: uniform_filter(np.asarray(x, dtype=np.float32), size=(1, 3, 3)).reshape(len(x), -1)
+
+    def blur(x: np.ndarray) -> np.ndarray:
+        return uniform_filter(np.asarray(x, dtype=np.float32), size=(1, 3, 3)).reshape(len(x), -1)
+
     A, B = blur(a), blur(b)
     d = np.stack([np.abs(B - row).mean(1) for row in A])
     return d.argmin(1), d.min(1)

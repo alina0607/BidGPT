@@ -26,11 +26,12 @@ from pathlib import Path
 
 import numpy as np
 
-ML = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ML / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import paint_cat_dataset as P
 
 from sellanything_ml.sketch import brushtokens, catbrush
+
+ML = Path(__file__).resolve().parents[1]
 
 
 def stem_of(full_id: str) -> str:

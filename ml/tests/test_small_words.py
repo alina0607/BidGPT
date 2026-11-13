@@ -12,10 +12,11 @@ import pytest
 
 from sellanything_ml.buyers import stories as S
 
-ML = Path(__file__).resolve().parents[1]
-sys.path.append(str(ML / "tools"))
+sys.path.append(str(Path(__file__).resolve().parents[1] / "tools"))
 import external_prompt as E
 import negation_probe as N
+
+ML = Path(__file__).resolve().parents[1]
 
 FOLDER = ML.parent / "data" / "written_sales" / "prompts_3000_3049"
 PAIRED = range(3000, 3050)

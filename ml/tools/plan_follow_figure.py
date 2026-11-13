@@ -39,7 +39,7 @@ def main() -> None:
     z = np.load(ML / "data/kaggle/brush_l5/data/data_L5.npz")
     val = [str(n) for n, s in zip(z["names"], z["split"]) if s == "val"][:N]
     g = np.load(RUN / "plan_follow" / "real_plan_t1.0_s3.npz")
-    big, small = ImageFont.truetype(FONT, 22), ImageFont.truetype(FONT, 16)
+    big = ImageFont.truetype(FONT, 22)
     out = Image.new("RGB", (N * (S + 6), 2 * (40 + S + 6 + 120 + 8) + 50), "white")
     d = ImageDraw.Draw(out)
     d.text((6, 10), "同一份構圖計畫：上面是訓練畫，下面是把這份計畫交給 L5 後它畫的（綠線＝計畫的眼眶，紅線＝瞳孔；前 8 隻驗證貓，沒有挑）",

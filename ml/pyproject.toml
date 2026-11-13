@@ -56,12 +56,6 @@ testpaths = ["tests"]
 # delete the entries.
 "**/notebooks/*.ipynb" = ["E402", "E702", "E731"]
 "**/notebooks/08_brush_gpt_painting.ipynb" = ["F541"]
-"**/sellanything_ml/buyers/sales_sft.py" = ["E731"]
-"**/sellanything_ml/sketch/linegpt.py" = ["E731"]
-"**/tests/test_sales_sft.py" = ["E731"]
-"**/tests/test_small_words.py" = ["E402"]
-"**/tools/backfill_cat_eye_checks.py" = ["E402"]
-"**/tools/plan_follow_figure.py" = ["F841"]
 
 [tool.mypy]
 python_version = "3.10"
