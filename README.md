@@ -27,29 +27,87 @@ models.
 
 ## What BidGPT says
 
-One round of a cat sale. The buyer's question and the player's typed answer come from a real play session (typo
-included). Every buyer line and every offer below is BidGPT B7's first sample at the game's settings (temperature 0.7,
-top-p 0.9), unedited; one model plays all four buyers, each from their own persona card.
+Two rounds from two cat sales. The seller's answers are the author's (Alina's) own input, typed while playing the seller (typos
+included). Everything in green is BidGPT B7: one model writes every buyer, each from their own persona card,
+from the opening line to every reaction and offer. Each sale was replayed ten times at the game's settings
+(temperature 0.7, top-p 0.9); the two rounds below were picked from those replays for fluency, and every line is
+shown unedited. The measured results further down are not picked.
 
-![Round 1: Ines asks about papers, the player answers, BidGPT writes four buyer reactions](docs/images/bidgpt_round_papers.svg)
+![Sale 1, round 1: the four buyers open, Ines asks about papers, the player answers, BidGPT writes four reactions](docs/images/bidgpt_round_papers.svg)
 
-Only the collector lowers her offer; the other three say why papers do not matter to them. The model also fixed the
-typo ("ragedoll" → Ragdoll) and Diego remembered his old cat Rufus, whom he named only in his opening line.
+Only the collector lowers her offer; the other three say why papers do not matter to them. The model fixes the
+typo ("ragedoll" → Ragdoll), Diego remembers his old cat Gus from his opening line, and Elena repeats the "no fuss"
+she asked for when she opened.
+
+![Sale 2, round 3: the four buyers open, Andre asks about tests, the player answers, BidGPT writes four reactions](docs/images/bidgpt_round_fiv.svg)
+
+"Acts pretty healthy" does not cancel FIV: all four buyers lower for the lifelong vet bills, each in their own terms.
+The allergic buyer adds that FIV cannot pass to people, so it has nothing to do with his allergy, and Felix's
+"long audit days" go back to his opening line. B6, the previous version, got this round right 3 times in 40.
 
 ### One small word changes the answer
 
-The same buyer, the same prompt; only the player's answer is swapped. Each cell is the model's most likely move and
-its probability, read from the model before it writes a word.
+The same buyer, the same prompt and the same sampling seed; only the seller's answer changes. Three answers are
+Alina's own input from play; two are test answers swapped in for her answer, to see whether the model reads the small
+word. B5 and B6 show the move they make; B7 shows its move and the reaction it writes.
 
-| Player's answer | Buyer | Should | B5 | B6 | B7 |
+| Buyer's question → seller's answer | Buyer reacting | Should | B5 | B6 | B7 |
 |---|---|---|---|---|---|
-| She barely sheds. | Owen (allergic) | raise | lower 97% | lower 49% | **raise 100%** |
-| She has FIV but she still acts pretty healthy and eats pretty well | Owen (allergic) | lower: lifelong vet bills | stay 96% | stay 93% | **lower 100%** |
-| Just told you that she is intact since she is just 2 months old. It's too young for the surgery | Felix (works long hours) | lower: a spay bill | raise 51% | raise 65% | **lower 99%** |
-| She tested negative for FIV. | Andre (wants excellent health) | stay: no cat at home to protect | raise 96% | raise 92% | **stay 89%** |
-| I'm not sure about that *(asked about kitten shots)* | Hana (wants up-to-date shots) | stay and ask a vet | lower 90% | lower 58% | lower 93% ❌ |
+| **Owen asks:** How much fur does she leave around? I've read that neutering can lower the allergen a cat makes.<br>**Test answer:** She barely sheds. | Owen (allergic) | raise | lower | lower | **raise** \$75 → \$85: *Barely shedding means less fur on my clothes and makeup in my dresser, though no cat is free of allergen, so I'd still sit with her first.* |
+| **Andre asks:** Is she up to date on her jabs, and has she been tested for anything?<br>**Alina's input:** She has FIV but she still acts pretty healthy and eats pretty well | Owen (allergic) | lower: lifelong vet bills | stay | stay | **lower** \$60 → \$50: *FIV can't reach people, yet her checkups for life would be my bill for as long as she lives.* |
+| **Felix asks:** Is she neutered yet? I'd have to book and pay for that myself.<br>**Alina's input:** Just told you that she is intact since she is just 2 months old. It's too young for the surgery | Felix (works long hours) | lower: a spay bill | raise | raise | **lower** \$62 → \$55: *Intact means a vet bill I'd have to fit around my tram shifts and pay for myself.* |
+| **Andre asks:** Is she up to date on her jabs, and has she been tested for anything?<br>**Test answer:** She tested negative for FIV. | Andre (wants excellent health) | stay: no cat at home to protect | raise | raise | **stay** \$73: *Tested negative is the health I'd expect before she comes home, so I'll ask about that and keep \$73.* |
+| **Hana asks:** She's ten. Has she had her kitten shots?<br>**Alina's input:** I'm not sure about that | Hana (wants up-to-date shots) | stay and ask a vet | lower | lower | **lower** \$80 → \$75 ❌: *Not sure about her kitten shots is a gap I'd fill in a vet check before I'd call her healthy.* |
 
-The last row is a case B7 still gets wrong.
+The last row is a case B7 still gets wrong. In every row the written move agrees with the model's most likely move,
+read from its probabilities before it writes a word.
+
+**How B7 learned "barely".** B5 and B6 did not: told *She barely sheds*, the allergic buyer lowered the offer, as if
+the cat shed a lot. Their training data explains why. An allergic buyer heard "sheds a lot" 159 times and lowered 153
+times, but heard "barely" only 6 times, "hardly" twice and "doesn't shed much" 5 times. Seeing "shed" was enough to
+guess "lower" almost every time, so the model never had to read the small word in front of it.
+
+B7's data adds 85 new written sales (929 in all) aimed at the phrasings the earlier models misread. Each phrasing is
+written in groups of sales on the same topic with opposite meanings (*barely sheds* / *sheds a lot* / *don't know*),
+for every kind of buyer it concerns, and some answers put a good and a bad fact in one sentence:
+
+| Seller's answer (training data, B7) | Allergic buyer's reaction |
+|---|---|
+| She barely sheds. | Hearing she barely sheds, there'd be less fur for my chest to fight, though no cat is free of the allergen and I'd sit with her first. Up to \$80. |
+| barely sheds, but she isnt spayed yet. | Barely shedding means less loose fur in my front room, which my allergy welcomes, though the spay is still a bill I'd pay. Down to \$65. |
+
+| Allergic buyer's reactions in the training data | B6 | B7 |
+|---|---|---|
+| "barely" | 6 | 24 |
+| "hardly" | 2 | 19 |
+| "doesn't shed much" | 5 | 23 |
+| "not much" | 0 | 17 |
+
+The same batch covers the other phrasings in the table above: FIV in a player's words ("has FIV", "fiv+") with and
+without "but she seems healthy", "not really, only with a dog", "I'm not sure", and "intact, she's only 2 months".
+B7 learned the phrasings it was shown (the probe answer *She barely sheds.* is itself one of the new training
+answers); it did not learn negation in general. Six phrasings were kept out of the
+training data on purpose (*ain't*, *no longer*, *rarely*, *seldom*, *even though*, *there's no denying*), and on the
+trap test's pairs with them B7 gets 6 of 48 right, against 3 for B6.
+
+**How B7 learned that Felix asked about the spay.** Felix asked whether she is neutered, and Alina's answer added a
+trap: the cat's age. B5 and B6 took the age as the point and raised (B5: *A kitten of 2 months has her whole life
+ahead, which is exactly the hours I'm away fixing trams.*). The direction itself was in their data: buyers who work
+long hours lowered for "intact" plus an age in months 28 times out of 29. What was missing was the way a player says
+it: of 15 seller answers with "intact" and an age in months, only 5 were in a player's style. B7's data has 29, 19 of
+them in a player's style, and pairs them with answers that give the age alone, where this buyer keeps the offer
+(B6: 19 such reactions; B7: 39, 36 of them keeping it):
+
+| Seller's answer (training data, B7) | Buyer who works long hours |
+|---|---|
+| shes intact, only 2 months. | Intact at two months means a spay I'd have to book and pay for around nights at the office till nine. Down to \$70. |
+| shes 2 months old. | Two months is her age, but an age tells me nothing about how many vet visits she'd need around my piano work, so I hold at \$70. |
+| She's 2 years old. | Being two years old doesn't shorten my twelve hour days or change how she copes alone, so \$65 holds. |
+
+The age is in both of the first two answers, so only "intact" can decide the move. B7 now answers the spay question
+and lets the age go. It has not fully learned the second half: told only *She's 2 years old.*, B7's Felix still lowers
+(*A cat of 2 years means more vet visits and more trips to the vet*), and told only *She's only 2 months old.* one
+round after hearing she is intact, he lowers again for the same spay bill.
 
 ### Training
 
