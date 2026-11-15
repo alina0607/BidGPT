@@ -27,23 +27,23 @@ models.
 
 ## What BidGPT says
 
-Two rounds from two cat sales. The seller's answers are the author's (Alina's) own input, typed while playing the seller (typos
-included). Everything in green is BidGPT B7: one model writes every buyer, each from their own persona card,
-from the opening line to every reaction and offer. Each sale was replayed ten times at the game's settings
-(temperature 0.7, top-p 0.9); the two rounds below were picked from those replays for fluency, and every line is
-shown unedited. The measured results further down are not picked.
+Two rounds from two cat sales. The seller's answers are the author's (Alina's) own input, typed while playing the
+seller (typos included). Everything in green is BidGPT B7: one model writes every buyer, each from their own persona
+card, with every reaction and offer. Each sale was replayed ten times at the game's settings (temperature 0.7,
+top-p 0.9); the two rounds below were picked from those replays for fluency, and the lines are shown as the model
+wrote them, except one name in square brackets. The measured results further down are not picked.
 
-![Sale 1, round 1: the four buyers open, Ines asks about papers, the player answers, BidGPT writes four reactions](docs/images/bidgpt_round_papers.svg)
+![Sale 1, round 1: Ines asks about papers, Alina answers, BidGPT writes four buyer reactions](docs/images/bidgpt_round_papers.svg)
 
-Only the collector lowers her offer; the other three say why papers do not matter to them. The model fixes the
-typo ("ragedoll" → Ragdoll), Diego remembers his old cat Gus from his opening line, and Elena repeats the "no fuss"
-she asked for when she opened.
+Only the collector lowers her offer; the other three say why papers do not matter to them, and the model fixes the
+typo ("ragedoll" → Ragdoll). Diego named his old cat, Gus, in his opening line, and the model wrote "Papers don't
+matter to Gus." The name is replaced with [my old cat] here because the openings are not shown.
 
-![Sale 2, round 3: the four buyers open, Andre asks about tests, the player answers, BidGPT writes four reactions](docs/images/bidgpt_round_fiv.svg)
+![Sale 2, round 3: Andre asks about tests, Alina answers, BidGPT writes four buyer reactions](docs/images/bidgpt_round_fiv.svg)
 
 "Acts pretty healthy" does not cancel FIV: all four buyers lower for the lifelong vet bills, each in their own terms.
-The allergic buyer adds that FIV cannot pass to people, so it has nothing to do with his allergy, and Felix's
-"long audit days" go back to his opening line. B6, the previous version, got this round right 3 times in 40.
+The allergic buyer adds that FIV cannot pass to people, so it has nothing to do with his allergy. B6, the previous
+version, got this round right 3 times in 40.
 
 ### One small word changes the answer
 
