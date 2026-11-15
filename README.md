@@ -137,18 +137,12 @@ sometimes lowers an offer, and some opening lines do not make sense.
 
 > Draw anything. Try to sell it. A room of AI buyers decides what it's worth.
 
-![A round played by --autoplay: draw a bicycle, confirm it, answer the buyers, sell](docs/images/round.gif)
-
 **Sell Anything** is a game built end-to-end from scratch:
 
 - a **custom C++ engine** with swappable rendering backends (OpenGL, DigiPen's DGL, headless),
 - a **sketch classifier** trained on all 345 classes of Google's [Quick, Draw!](https://github.com/googlecreativelab/quickdraw-dataset),
 - a **price engine and host** that run a 3–5 buyer negotiation for any of the 259 sellable items,
 - a **small GPT trained from scratch** (tokenizer → pre-training → SFT) to speak and judge for the buyers.
-
-| Draw | Confirm | Negotiate | Sell |
-|---|---|---|---|
-| ![Drawing a bicycle](docs/images/1-draw.png) | ![Top-3 guesses](docs/images/2-confirm.png) | ![Buyers asking questions](docs/images/3-negotiate.png) | ![Sold](docs/images/4-sold.png) |
 
 > 🚧 **Status:** a full round is playable (draw → classify → negotiate → sell). Buyers speak through
 > the trained model, with the price engine as a guardrail: the engine owns every number, and a model
