@@ -25,6 +25,56 @@
 "GPT" here is the architecture (a decoder-only transformer, trained from scratch); it is not based on OpenAI's
 models.
 
+## What BidGPT says
+
+One round of a cat sale. The buyer's question and the player's typed answer come from a real play session (typo
+included). Every buyer line and every offer below is BidGPT B7's first sample at the game's settings (temperature 0.7,
+top-p 0.9), unedited; one model plays all four buyers, each from their own persona card.
+
+![Round 1: Ines asks about papers, the player answers, BidGPT writes four buyer reactions](docs/images/bidgpt_round_papers.svg)
+
+Only the collector lowers her offer; the other three say why papers do not matter to them. The model also fixed the
+typo ("ragedoll" → Ragdoll) and Diego remembered his old cat Rufus, whom he named only in his opening line.
+
+### One small word changes the answer
+
+The same buyer, the same prompt; only the player's answer is swapped. Each cell is the model's most likely move and
+its probability, read from the model before it writes a word.
+
+| Player's answer | Buyer | Should | B5 | B6 | B7 |
+|---|---|---|---|---|---|
+| She barely sheds. | Owen (allergic) | raise | lower 97% | lower 49% | **raise 100%** |
+| She has FIV but she still acts pretty healthy and eats pretty well | Owen (allergic) | lower: lifelong vet bills | stay 96% | stay 93% | **lower 100%** |
+| Just told you that she is intact since she is just 2 months old. It's too young for the surgery | Felix (works long hours) | lower: a spay bill | raise 51% | raise 65% | **lower 99%** |
+| She tested negative for FIV. | Andre (wants excellent health) | stay: no cat at home to protect | raise 96% | raise 92% | **stay 89%** |
+| I'm not sure about that *(asked about kitten shots)* | Hana (wants up-to-date shots) | stay and ask a vet | lower 90% | lower 58% | lower 93% ❌ |
+
+The last row is a case B7 still gets wrong.
+
+### Training
+
+![Pre-training loss over 1.28B tokens, then fine-tuning loss of B7 over 16,695 steps](docs/images/bidgpt_loss.png)
+
+1. **Pre-training** from random weights on 1.28B FineWeb-Edu tokens (39,062 steps of 64 × 512 tokens, one A100):
+   validation loss 2.86.
+2. **Supervised fine-tuning (B7)** on 929 written cat sales, two epochs (16,695 steps of 16 examples, one Kaggle T4,
+   in two sessions): validation loss on 109 held-out sales 1.93 → 1.27. Training loss drops at the start of the
+   second pass over the data, while validation loss keeps falling.
+
+### Measured, not picked
+
+| Test | B5 | B6 | B7 |
+|---|---|---|---|
+| Two play-session sales replayed 10 times: offer moved the right way | 57% | 71% | **91%** |
+| Swapped-answer probes (47 answers): most likely move right | 23 | 34 | **42** |
+| Held-out sales (17 sales, 1,513 reactions): same direction as the written buyer | — | 79.4% | **81.8%** (paired z = 2.66) |
+| Trap test (229 answer pairs with opposite meanings): both right | 21 | 47 | 43 |
+
+The B7 data batch was written to fix what the two play-session sales exposed, so those two rows show that the fix
+worked; the held-out sales and the trap test are the independent checks. On them B7 gains 2.4 points and does not
+improve on the trap test. Known weaknesses of B7: a buyer can lower twice for the same bill, a cat's age alone
+sometimes lowers an offer, and some opening lines do not make sense.
+
 ## Sell Anything: the game around it
 
 > Draw anything. Try to sell it. A room of AI buyers decides what it's worth.
@@ -144,6 +194,7 @@ The classifier checkpoint comes from `python -m sellanything_ml.sketch.train --p
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ./build/game/sell_anything                # --autoplay plays a round by itself
+./build/game/sell_anything --market       # the painted market and its characters instead of the studio look
 ./build/game/sell_anything --buy          # buy a cat: the buyer GPT B6 is the seller and the other buyers
 ./build/game/sell_anything --compare b4f9,b5   # the same cat sale to two buyer models, side by side
 ```
