@@ -886,8 +886,11 @@ void DGL_Graphics_DrawMeshToTexture(const DGL_Mesh* mesh, DGL_DrawMode mode,
         return;
     glBindFramebuffer(GL_FRAMEBUFFER, renderTexture->framebuffer);
     glViewport(0, 0, renderTexture->width, renderTexture->height);
+    // OpenGL stores a framebuffer's rows bottom-first, but textures are sampled with (0,0) at the top-left (as
+    // loaded images and Direct3D render targets are). Flipping y here keeps a render texture upright when it is
+    // later drawn like any other texture.
     Draw(mesh, mode, static_cast<float>(renderTexture->width),
-         static_cast<float>(renderTexture->height));
+         -static_cast<float>(renderTexture->height));
 
     int fbWidth = 0, fbHeight = 0;
     glfwGetFramebufferSize(g.window, &fbWidth, &fbHeight);
